@@ -86,7 +86,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'gestion_tontine',
         'USER':'root', # Assurez-vous de remplacer par votre nom d'utilisateur MySQL
-        'PASSWORD': 'Nguat1234=', # Assurez-vous de remplacer par votre mot de passe MySQL
+        'PASSWORD': 'Pi@berd44', # Assurez-vous de remplacer par votre mot de passe MySQL
         'HOST': 'localhost',  # ou l'adresse IP de votre serveur MySQL
         'PORT': '3306',       # le port par défaut de MySQL
 
