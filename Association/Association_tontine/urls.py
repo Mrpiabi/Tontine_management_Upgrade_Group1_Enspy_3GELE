@@ -2,6 +2,12 @@ from django import views
 from django.urls import path,include
 from . views import *
 from django.contrib import admin
+from Association_tontine.views import (
+    page_accueil, base, register, 
+    landing_page_view,
+    tableau_de_bord, tableau_de_bord_global
+)
+from django.urls import path
 from pathlib import Path
 #BASE_DIR= Path(_file_).resolve().parent.parent
 #from .views import deconnexion
@@ -9,15 +15,12 @@ from pathlib import Path
 
 
 urlpatterns = [
-    
-    path('', home, name='home'),
+    path('admin/', admin.site.urls),
+    path('', landing_page_view, name='landing_page'),
+    path('connexion/', page_accueil, name='login'),
     path('base/', base, name='base'),
-    path('login/', login_view, name='login'),
-    path('accueil/', page_accueil, name='page_accueil'),
-    #path('', login, name='login'),
-    #path('deconnexion/', deconnexion, name='deconnexion'),
+    # ... (the rest of your urlpatterns stay the same)
     path('register/<str:username>/', register, name='register'),
-
     # les utilisateurs
 
     path('super-utilisateurs/', liste_super_utilisateurs, name='liste_super_utilisateurs'),

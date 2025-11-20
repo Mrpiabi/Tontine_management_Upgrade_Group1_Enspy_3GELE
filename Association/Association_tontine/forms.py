@@ -9,6 +9,7 @@ from django.contrib.auth.hashers import make_password
 from Association_tontine.models import membre
 
 
+#Added New form for creation of members 
 
 class CustomAuthenticationForm(forms.Form):
     login = forms.CharField(required=True)
@@ -293,3 +294,42 @@ class CotisationForm(forms.ModelForm):
             'penaliteDefaillanceNonBenef': 'Pénalité (non bénéficiaire)',
             'miseAPrix': 'Mise à prix',
         }
+
+
+
+# Define choices here to keep them consistent
+ENGAGEMENT_CHOICES = [
+    ('marie(e)', 'Marié(e)'),
+    ('celibataire', 'Célibataire'),
+    ('divorce(e)', 'Divorcé(e)')
+]
+SEXE_CHOICES = [
+    ('M', 'Masculin'),
+    ('F', 'Féminin')
+]
+
+# THIS IS THE NEW FORM WE WILL USE TO REPLACE THE LOGIC IN 'ajouter_membre'
+class SuperuserCreateMembreForm(forms.Form):
+    nom = forms.CharField(max_length=50, label="Nom de famille", required=True)
+    prenom = forms.CharField(max_length=50, label="Prénom(s)", required=True)
+    email = forms.EmailField(
+        label="Adresse Email", 
+        required=True,
+        help_text="Cette adresse servira aussi de nom d'utilisateur."
+    )
+    
+    anneeEntree = forms.IntegerField(label="Année d'Entrée", required=True)
+    sexe = forms.ChoiceField(choices=SEXE_CHOICES, label="Sexe")
+    engagement = forms.ChoiceField(choices=ENGAGEMENT_CHOICES, label="Statut matrimonial")
+    telephone1 = forms.CharField(max_length=15, label="Téléphone principal", required=True)
+    
+    # Optional fields from your 'membre' model
+    anneeNais = forms.IntegerField(label="Année de Naissance", required=False)
+    telephone2 = forms.CharField(max_length=15, label="Téléphone secondaire", required=False)
+
+    def clean_email(self):
+        """Custom validation to ensure the email is unique across the User model."""
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("Un utilisateur avec cette adresse email existe déjà.")
+        return email

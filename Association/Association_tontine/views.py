@@ -1,8 +1,9 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 #from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib import messages
 from django.db import models
+from django.shortcuts import render
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -15,10 +16,64 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import check_password
 from .models import membre,don,tontines,Notification,DemandeModification,TontinesMembres, pret, aide,cotisation,versementsol,versementcotis,epargne,remboursement,sanction
 from .forms import MembreForm,LoginForm,TontinesForm,UserForm,PretForm,DonForm,AideForm,SanctionForm,RemboursementForm,VersementsolForm,VersementcotisForm,EpargneForm,CotisationForm
-
+from django.db import transaction
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.models import User
+import string
+import random
+from datetime import datetime
+import json
+# Import our NEW form
+from .forms import SuperuserCreateMembreForm 
 # Create your views here.
 
+def page_accueil(request):
+    # Initialize form_data to handle GET requests
+    form_data = {}
 
+    # --- SIMPLIFIED AND ROBUST LOGIN LOGIC ---
+    if request.method == 'POST':
+        username_from_form = request.POST.get('username')
+        password_from_form = request.POST.get('password')
+        
+        # Store the submitted username to re-populate the form if login fails
+        form_data['username'] = username_from_form
+
+        # Use Django's built-in authenticate function. It handles everything.
+        # It checks if the user exists AND if the password is correct.
+        user = authenticate(request, username=username_from_form, password=password_from_form)
+        
+        if user is not None:
+            # A user was successfully authenticated.
+            auth_login(request, user)
+            
+            # Redirect based on user type
+            if user.is_superuser:
+                return redirect('tableau_de_bord_global')
+            else:
+                return redirect('tableau_de_bord')
+        else:
+            # authenticate() returned None. This means the credentials are invalid.
+            # We don't know if it's the username or password, which is more secure.
+            messages.error(request, "Nom d'utilisateur ou mot de passe incorrect. Veuillez réessayer.")
+
+    # --- CHART LOGIC (runs on GET requests and failed logins) ---
+    membres = membre.objects.exclude(anneeNais__isnull=True)
+    current_year = datetime.now().year
+    ages = [current_year - m.anneeNais for m in membres if m.anneeNais and m.anneeNais > 1900]
+    
+    groupes = {}
+    for age in ages:
+        tranche = f"{(age//10)*10}-{(age//10)*10+9}"
+        groupes[tranche] = groupes.get(tranche, 0) + 1
+
+    context = {
+        "groupes_ages_labels": json.dumps(list(groupes.keys())),
+        "groupes_ages_values": json.dumps(list(groupes.values())),
+        "form_data": form_data, # Pass form_data to the template
+    }
+    
+    return render(request, "accueil.html", context)
 #def deconnexion(request):
  #   logout(request)
   #  messages.success(request, 'Vous avez été déconnecté avec succès.')
@@ -53,34 +108,6 @@ def home(request):
 def base(request):
      return render(request,'base.html')
   # Assurez-vous d'avoir un formulaire de connexion
-
-
-from datetime import datetime
-from .models import membre
-import json
-
-def page_accueil(request):
-    membres = membre.objects.exclude(anneeNais__isnull=True)
-    current_year = datetime.now().year
-
-    ages = [current_year - m.anneeNais for m in membres if m.anneeNais and m.anneeNais > 1900]
-    
-    # Groupe les âges par tranche de 10 ans
-    groupes = {}
-    for age in ages:
-        tranche = f"{(age//10)*10}-{(age//10)*10+9}"
-        groupes[tranche] = groupes.get(tranche, 0) + 1
-
-    context = {
-        "groupes_ages_labels": json.dumps(list(groupes.keys())),
-        "groupes_ages_values": json.dumps(list(groupes.values())),
-    }
-    return render(request, "accueil.html", context)
-  
-
-
-
-
 from .forms import CustomAuthenticationForm
 
 
@@ -1175,32 +1202,73 @@ def dons(request):
    
 
 
+# Helper function to generate a random password
+def generate_random_password(length=10):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for i in range(length))
+
+# Helper function to check for superuser status
+def is_superuser(user):
+    return user.is_superuser
+
+
+# REPLACE YOUR OLD 'ajouter_membre' FUNCTION WITH THIS NEW ONE
+@user_passes_test(is_superuser)
 def ajouter_membre(request):
     if request.method == 'POST':
-        form = MembreForm(request.POST)
+        form = SuperuserCreateMembreForm(request.POST) # Utilise le nouveau formulaire
         if form.is_valid():
-            membre_instance = form.save(commit=False)
-
-            # Créer un utilisateur sans mot de passe
-            user = User(
-                username=membre_instance.login,
-                email=membre_instance.email,
-                is_superuser=membre_instance.is_admin,
-                is_staff=membre_instance.is_admin
-            )
-            user.set_unusable_password()
+            data = form.cleaned_data
+            email = data['email']
             
-            user.save()
+            try:
+                with transaction.atomic():
+                    # 1. Générer un mot de passe temporaire
+                    temp_password = generate_random_password()
 
-            membre_instance.user = user
-            membre_instance.save()
+                    # 2. Créer le compte Utilisateur Django
+                    new_user = User.objects.create_user(
+                        username=email,
+                        email=email,
+                        password=temp_password,
+                        first_name=data['prenom'],
+                        last_name=data['nom']
+                    )
+                    
+                    # 3. Créer le profil 'membre' correspondant et le lier
+                    membre.objects.create(
+                        user=new_user,
+                        nom=data['nom'],
+                        prenom=data['prenom'],
+                        email=email,
+                        login=email,
+                        anneeEntree=data['anneeEntree'],
+                        sexe=data['sexe'],
+                        engagement=data['engagement'],
+                        telephone1=data['telephone1'],
+                        anneeNais=data.get('anneeNais'),
+                        telephone2=data.get('telephone2'),
+                        actif=1
+                    )
+                
+                # 4. Afficher les identifiants à l'administrateur
+                success_message = (
+                    f"Le membre '{data['prenom']} {data['nom']}' a été créé avec succès. "
+                    f"Le nouveau compte est : "
+                    f"Nom d'utilisateur = {email} | "
+                    f"Mot de passe temporaire = {temp_password}"
+                )
+                messages.success(request, success_message)
+                
+                return redirect('membres') # Redirige vers la liste des membres
 
-            messages.success(request, "Membre ajouté. Il devra définir son mot de passe à la première connexion.")
-            return redirect('membres')
-    else:
-        form = MembreForm()
+            except Exception as e:
+                messages.error(request, f"Une erreur inattendue est survenue : {e}")
 
-    return render(request, 'ajouter_membre.html', {'form': form})  
+    else: # Requête GET
+        form = SuperuserCreateMembreForm()
+
+    return render(request, 'ajouter_membre.html', {'form': form})
 
 
 
@@ -1956,3 +2024,13 @@ def afficher_prets(request, idMembre):
         'prets_avaliste': prets_avaliste,
         'prets_preteur': prets_preteur,
     })
+
+
+
+
+def landing_page_view(request):
+    """
+    Vue simple pour afficher la page de présentation.
+    """
+    return render(request, 'landing.html')
+

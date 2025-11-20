@@ -1,0 +1,152 @@
+<!-- TEMPLATES/landing.html -->
+
+{% load static %}
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenue à Notre Tontine</title>
+    <!-- Dans TEMPLATES/landing.html -->
+
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+
+    body {
+        margin: 0;
+        font-family: 'Montserrat', sans-serif;
+        color: white;
+        /* Supprimez overflow: hidden; pour permettre le défilement si nécessaire */
+    }
+
+    .hero-container {
+        position: relative;
+        min-height: 100vh; /* Utilisez min-height au lieu de height */
+        padding: 40px 20px; /* Ajoutez du padding pour les petits écrans */
+        box-sizing: border-box; /* Assure que le padding est inclus dans la hauteur */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+    }
+
+    .hero-background {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url("{% static 'images/background.jpg' %}");
+        background-size: cover;
+        background-position: center;
+        background-attachment: fixed; /* L'image de fond reste fixe lors du défilement */
+        filter: blur(3px);
+        transform: scale(1.05);
+        z-index: -1; /* Mettez-le en arrière-plan de tout */
+    }
+
+    .hero-content {
+        position: relative;
+        background: rgba(0, 0, 0, 0.5); /* Légèrement plus transparent */
+        padding: 30px 40px; /* Padding légèrement réduit */
+        border-radius: 20px;
+        max-width: 800px;
+        box-shadow: 0 5px 25px rgba(0,0,0,0.2);
+    }
+
+    h1 {
+        font-size: 2.5em; /* Taille de police légèrement réduite */
+        margin-bottom: 0.5em;
+        font-weight: 700;
+    }
+
+    h2 {
+        font-size: 1.6em; /* Taille de police légèrement réduite */
+        color: #f1c40f;
+        margin-top: 1.5em;
+        margin-bottom: 1em;
+    }
+
+    p {
+        font-size: 1.0em; /* Taille de police légèrement réduite */
+        line-height: 1.6;
+        max-width: 600px;
+        margin: 0 auto 1.5em auto;
+    }
+
+    ul {
+        list-style: none;
+        padding: 0;
+        margin-bottom: 2em;
+        display: inline-block;
+        text-align: left;
+    }
+
+    ul li {
+        font-size: 1.1em;
+        margin-bottom: 0.8em;
+    }
+
+    ul li::before {
+        content: '✓';
+        color: #2ecc71;
+        margin-right: 15px;
+        font-weight: bold;
+    }
+
+    .btn-connect {
+        background-color: #2ecc71;
+        color: white;
+        padding: 15px 40px;
+        text-decoration: none;
+        font-size: 1.2em;
+        font-weight: bold;
+        border-radius: 50px;
+        transition: background-color 0.3s ease, transform 0.2s ease;
+        display: inline-block; /* Assure que le bouton se comporte comme un bloc */
+        margin-top: 10px; /* Ajoute un petit espace au-dessus */
+    }
+
+    .btn-connect:hover {
+        background-color: #27ae60;
+        transform: translateY(-3px);
+    }
+
+    /* Media Query pour les écrans plus petits (mobiles) */
+    @media (max-width: 768px) {
+        .hero-content {
+            padding: 20px;
+        }
+        h1 {
+            font-size: 1.8em;
+        }
+        h2 {
+            font-size: 1.4em;
+        }
+        ul li, p {
+            font-size: 0.9em;
+        }
+    }
+</style>
+</head>
+<body>
+    <div class="hero-container">
+        <div class="hero-background"></div>
+        <div class="hero-content">
+            <h1>Notre association vous offre un cadre sécurisé pour gérer vos économies collectives, avec des bénéfices pour chaque membre</h1>
+            
+            <h2>Pourquoi rejoindre notre tontine ?</h2>
+            <p>Une tontine est un système de gestion collective des économies qui permet à ses membres de participer à des prêts et de bénéficier de ressources communes. Ensemble, nous pouvons accomplir plus !</p>
+            
+            <p>Avec notre association, vous avez la garantie de :</p>
+            <ul>
+                <li>Solidarité et entraide</li>
+                <li>Un système transparent et bien géré</li>
+                <li>Des avantages pour chaque membre à chaque étape</li>
+            </ul>
+
+            <a href="{% url 'login' %}" class="btn-connect">Se connecter</a>
+        </div>
+    </div>
+</body>
+</html>

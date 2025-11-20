@@ -42,7 +42,7 @@ INSTALLED_APPS = [
     'Association_tontine',
 ]
 
-LOGIN_URL = '/login/'
+LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = '/tableau_de_bord/'
 
 
@@ -137,3 +137,5 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+# Dans settings.py
+STATICFILES_DIRS = [BASE_DIR / 'static']
