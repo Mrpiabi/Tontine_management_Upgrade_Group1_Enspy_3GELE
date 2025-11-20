@@ -1212,7 +1212,7 @@ def is_superuser(user):
     return user.is_superuser
 
 
-# REPLACE YOUR OLD 'ajouter_membre' FUNCTION WITH THIS NEW ONE
+
 @user_passes_test(is_superuser)
 def ajouter_membre(request):
     if request.method == 'POST':
@@ -1260,7 +1260,8 @@ def ajouter_membre(request):
                 )
                 messages.success(request, success_message)
                 
-                return redirect('membres') # Redirige vers la liste des membres
+                #return redirect('membres') # Redirige vers la liste des membres
+                form = SuperuserCreateMembreForm()
 
             except Exception as e:
                 messages.error(request, f"Une erreur inattendue est survenue : {e}")
