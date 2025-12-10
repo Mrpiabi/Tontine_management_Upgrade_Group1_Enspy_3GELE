@@ -2,81 +2,169 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Répartition des âges</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bienvenue et Connexion - Tontine App</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+
         body {
-            background: linear-gradient(to right, #fceabb, #f8b500);
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Poppins', sans-serif;
             margin: 0;
-            padding: 0;
-            text-align: center;
+            background-color: #f4f7f6;
             color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden;
+            position: relative;
         }
 
-        h2 {
-            padding-top: 50px;
-            font-size: 2.5em;
+        .background-chart {
+            position: absolute;
+            bottom: -50%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 150vw;
+            height: 150vw;
+            opacity: 0.08;
+            z-index: 1;
         }
 
-        .chart-container {
-            width: 30%; /* Réduire à 30% */
-            max-width: 300px; /* Garder une largeur maximale */
-            margin: 40px auto;
-            background-color: white;
-            padding: 20px; /* Réduire le padding */
-            border-radius: 20px;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        .login-card {
+            background: white;
+            padding: 2.5rem 3rem;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 400px;
+            text-align: center;
+            z-index: 2;
+            position: relative;
         }
 
-        canvas {
-            max-width: 100%; /* Assurez-vous que le canevas ne déborde pas */
-            height: auto; /* Garder l’aspect ratio */
+        .login-card h1 { margin-top: 0; font-weight: 600; color: #2c3e50; }
+        .login-card p { color: #7f8c8d; margin-bottom: 2rem; }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+            position: relative;
         }
 
-        .btn {
-            margin-top: 20px;
-            padding: 12px 24px;
-            font-size: 1.1em;
-            background-color: #ff8c00;
-            color: white;
-            border: none;
-            border-radius: 10px;
+        .form-group input {
+            width: 100%;
+            padding: 12px 40px 12px 15px; /* Add padding-right for the icon */
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-family: 'Poppins', sans-serif;
+            font-size: 1rem;
+            box-sizing: border-box;
+        }
+        
+        .password-toggle-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
             cursor: pointer;
-            transition: background-color 0.3s ease;
+            color: #95a5a6;
+            width: 20px;
+            height: 20px;
         }
-
-        .btn:hover {
-            background-color: #e67e22;
+        
+        .btn-submit {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(to right, #3498db, #2980b9);
+            color: white;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+        .btn-submit:hover { transform: translateY(-2px); }
+        
+        .alert-danger {
+            color: #721c24;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-radius: .25rem;
+            text-align: center;
         }
     </style>
 </head>
-    
 <body>
-    <h1 style="text-align:center;">Répartition des membres par tranche d'âge</h1>
-    <div class="chart-container">
+
+    <div class="background-chart">
         <canvas id="ageChart"></canvas>
     </div>
-    <a href="{% url 'tableau_de_bord' %}"><button class="btn">Si vous souhaitez rejoindre cette association, cliquez ici</button></a>
+
+    <div class="login-card">
+        <h1>Connectez-vous</h1>
+        <p>Accédez à votre tableau de bord</p>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-danger" role="alert">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-group">
+                <input type="text" name="username" placeholder="Nom d'utilisateur" required value="{{ form_data.username }}">
+            </div>
+            <div class="form-group">
+                <input type="password" name="password" id="password-input" placeholder="Mot de passe" required>
+                <span class="password-toggle-icon" id="toggle-password">
+                    <!-- Eye Icon (SVG) -->
+                    <svg id="eye-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <!-- Eye Slashed Icon (SVG) - initially hidden -->
+                    <svg id="eye-slashed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="display: none;">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.243 4.243L6.228 6.228" />
+                    </svg>
+                </span>
+            </div>
+            <button type="submit" class="btn-submit">Connexion</button>
+        </form>
+    </div>
 
     <script>
-        const labels = JSON.parse('{{ groupes_ages_labels|safe }}');
-        const values = JSON.parse('{{ groupes_ages_values|safe }}');
+        // --- JAVASCRIPT FOR PASSWORD TOGGLE ---
+        const togglePassword = document.querySelector('#toggle-password');
+        const passwordInput = document.querySelector('#password-input');
+        const eyeOpen = document.querySelector('#eye-open');
+        const eyeSlashed = document.querySelector('#eye-slashed');
 
-        const ctx = document.getElementById('ageChart').getContext('2d');
-        new Chart(ctx, {
-            type: 'pie',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'Répartition par âge',
-                    data: values,
-                    backgroundColor: [
-                        '#f87171', '#60a5fa', '#34d399', '#fbbf24', '#a78bfa', '#f472b6', '#facc15'
-                    ],
-                }]
+        togglePassword.addEventListener('click', function () {
+            const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordInput.setAttribute('type', type);
+            
+            if (type === 'password') {
+                eyeOpen.style.display = 'block';
+                eyeSlashed.style.display = 'none';
+            } else {
+                eyeOpen.style.display = 'none';
+                eyeSlashed.style.display = 'block';
             }
         });
+
+        // --- JAVASCRIPT FOR THE CHART ---
+        const labels = JSON.parse('{{ groupes_ages_labels|safe }}');
+        const values = JSON.parse('{{ groupes_ages_values|safe }}');
+        const ctx = document.getElementById('ageChart').getContext('2d');
+        new Chart(ctx, { /* ... chart configuration ... */ });
     </script>
 </body>
 </html>

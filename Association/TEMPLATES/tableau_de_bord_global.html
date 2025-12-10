@@ -1,62 +1,182 @@
-{% extends "base.html" %}
+<!-- TEMPLATES/tableau_de_bord_global.html -->
+{% extends 'base.html' %}
 
 {% block content %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Tableau de Bord Global</title>
-    <style>
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-        }
-        table {
-            width: 100%; /* Agrandir le tableau pour qu'il prenne toute la largeur */
-            border-collapse: collapse; /* Pour supprimer les espaces entre les bordures */
-        }
-        th, td {
-            padding: 10px; /* Ajout de padding pour un meilleur espacement */
-            text-align: left;
-            border: 1px solid black; /* Bordure pour les cellules */
-        }
-        footer {
-            margin-top: auto; /* Pour pousser le footer en bas de la page */
-            text-align: center; /* Centrer le texte */
-            padding: 20px; /* Padding pour le footer */
-        }
-    </style>
-</head>
-<body>
-    <h1>Tableau de Bord Global</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>Nom</th>
-                <th>Tontines</th>
-                <th>Total Épargnes</th>
-                <th>Total Prêts</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for membre in membres %}
-            <tr>
-                <td>{{ membre.nom }} {{ membre.prenom }}</td>
-                <td>
-                    {% for tontine in membre.tontines.all %}
-                        {{ tontine.nomTontines }}{% if not forloop.last %}, {% endif %}
-                    {% empty %}
-                        Aucune
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+
+    .dashboard-container {
+        font-family: 'Poppins', sans-serif;
+        background-color: #f8f9fa;
+        padding: 30px;
+    }
+    .dashboard-header h1 { font-weight: 700; color: #343a40; }
+    .dashboard-header p { color: #6c757d; font-size: 1.1rem; }
+
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+    .kpi-card {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+        border-left: 5px solid;
+    }
+    .kpi-card .label { font-size: 1rem; color: #6c757d; text-transform: uppercase; margin-bottom: 5px; }
+    .kpi-card .value { font-size: 2.2rem; font-weight: 700; color: #343a40; }
+    
+    .card-membres { border-color: #007bff; }
+    .card-fonds { border-color: #28a745; }
+    .card-prets { border-color: #dc3545; }
+
+    .charts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: 25px;
+        margin-bottom: 40px;
+    }
+    .chart-container {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+    .chart-container h3 { margin-top: 0; font-weight: 600; text-align: center; color: #495057; }
+
+    .table-container {
+        background: white;
+        padding: 25px;
+        border-radius: 10px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+    .table-responsive { overflow-x: auto; }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th, .table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #dee2e6; }
+    .table thead th { background-color: #f8f9fa; font-weight: 600; }
+    .table tbody tr:hover { background-color: #f1f3f5; }
+</style>
+
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h1>Tableau de Bord Global</h1>
+        <p>Vue d'ensemble de l'activité de l'association.</p>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+        <div class="kpi-card card-membres">
+            <div class="label">Membres Actifs</div>
+            <div class="value">{{ kpi.total_membres }}</div>
+        </div>
+        <div class="kpi-card card-fonds">
+            <div class="label">Fonds Totaux Gérés</div>
+            <div class="value">{{ kpi.fonds_totaux|floatformat:0 }} <small>FCFA</small></div>
+        </div>
+        <div class="kpi-card card-prets">
+            <div class="label">Prêts en Cours</div>
+            <div class="value">{{ kpi.prets_en_cours|floatformat:0 }} <small>FCFA</small></div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="charts-grid">
+        <div class="chart-container">
+            <h3>Croissance des Membres</h3>
+            <canvas id="growthChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <h3>Popularité des Tontines</h3>
+            <canvas id="popularityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Member List Table -->
+    <div class="table-container">
+        <h3>Liste des Membres Actifs</h3>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nom</th>
+                        <th>Prénom</th>
+                        <th>Email</th>
+                        <th>Année d'Entrée</th>
+                        <th>Tontines</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for membre in membres %}
+                    <tr>
+                        <td>{{ membre.nom }}</td>
+                        <td>{{ membre.prenom }}</td>
+                        <td>{{ membre.email }}</td>
+                        <td>{{ membre.anneeEntree }}</td>
+                        <td>
+                            {% for t in membre.tontines.all %}
+                                {{ t.nomTontines }}{% if not forloop.last %}, {% endif %}
+                            {% empty %}
+                                Aucune
+                            {% endfor %}
+                        </td>
+                    </tr>
                     {% endfor %}
-                </td>
-                <td>{{ membre.total_epargnes }}</td>
-                <td>{{ membre.total_prets }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    
-    
-</body>
-</html>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // --- Chart 1: Member Growth (Line Chart) ---
+    const growthLabels = {{ charts.membres_growth_labels|safe }};
+    const growthValues = {{ charts.membres_growth_values|safe }};
+    if (growthLabels.length > 0) {
+        const ctxGrowth = document.getElementById('growthChart').getContext('2d');
+        new Chart(ctxGrowth, {
+            type: 'line',
+            data: {
+                labels: growthLabels,
+                datasets: [{
+                    label: 'Nouveaux Membres',
+                    data: growthValues,
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: { responsive: true, plugins: { legend: { display: false } } }
+        });
+    }
+
+    // --- Chart 2: Tontine Popularity (Bar Chart) ---
+    const popularityLabels = {{ charts.tontine_popularity_labels|safe }};
+    const popularityValues = {{ charts.tontine_popularity_values|safe }};
+    if (popularityLabels.length > 0) {
+        const ctxPopularity = document.getElementById('popularityChart').getContext('2d');
+        new Chart(ctxPopularity, {
+            type: 'bar',
+            data: {
+                labels: popularityLabels,
+                datasets: [{
+                    label: 'Nombre de Membres',
+                    data: popularityValues,
+                    backgroundColor: ['#28a745', '#ffc107', '#17a2b8', '#6f42c1', '#fd7e14'],
+                }]
+            },
+            options: { 
+                responsive: true, 
+                indexAxis: 'y', // Makes it a horizontal bar chart, easier to read
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

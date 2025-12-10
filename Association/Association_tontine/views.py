@@ -1,8 +1,12 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
 #from django.contrib.auth import login
+from django.db.models import Sum, Count,F
+from django.db.models.functions import ExtractYear
+import pandas as pd
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib import messages
 from django.db import models
+from django.shortcuts import render
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from django.contrib.auth.models import User
@@ -15,10 +19,64 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import check_password
 from .models import membre,don,tontines,Notification,DemandeModification,TontinesMembres, pret, aide,cotisation,versementsol,versementcotis,epargne,remboursement,sanction
 from .forms import MembreForm,LoginForm,TontinesForm,UserForm,PretForm,DonForm,AideForm,SanctionForm,RemboursementForm,VersementsolForm,VersementcotisForm,EpargneForm,CotisationForm
-
+from django.db import transaction
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.contrib.auth.models import User
+import string
+import random
+from datetime import datetime
+import json
+# Import our NEW form
+from .forms import SuperuserCreateMembreForm 
 # Create your views here.
 
+def page_accueil(request):
+    # Initialize form_data to handle GET requests
+    form_data = {}
 
+    # --- SIMPLIFIED AND ROBUST LOGIN LOGIC ---
+    if request.method == 'POST':
+        username_from_form = request.POST.get('username')
+        password_from_form = request.POST.get('password')
+        
+        # Store the submitted username to re-populate the form if login fails
+        form_data['username'] = username_from_form
+
+        # Use Django's built-in authenticate function. It handles everything.
+        # It checks if the user exists AND if the password is correct.
+        user = authenticate(request, username=username_from_form, password=password_from_form)
+        
+        if user is not None:
+            # A user was successfully authenticated.
+            auth_login(request, user)
+            
+            # Redirect based on user type
+            if user.is_superuser:
+                return redirect('tableau_de_bord_global')
+            else:
+                return redirect('tableau_de_bord')
+        else:
+            # authenticate() returned None. This means the credentials are invalid.
+            # We don't know if it's the username or password, which is more secure.
+            messages.error(request, "Nom d'utilisateur ou mot de passe incorrect. Veuillez réessayer.")
+
+    # --- CHART LOGIC (runs on GET requests and failed logins) ---
+    membres = membre.objects.exclude(anneeNais__isnull=True)
+    current_year = datetime.now().year
+    ages = [current_year - m.anneeNais for m in membres if m.anneeNais and m.anneeNais > 1900]
+    
+    groupes = {}
+    for age in ages:
+        tranche = f"{(age//10)*10}-{(age//10)*10+9}"
+        groupes[tranche] = groupes.get(tranche, 0) + 1
+
+    context = {
+        "groupes_ages_labels": json.dumps(list(groupes.keys())),
+        "groupes_ages_values": json.dumps(list(groupes.values())),
+        "form_data": form_data, # Pass form_data to the template
+    }
+    
+    return render(request, "accueil.html", context)
 #def deconnexion(request):
  #   logout(request)
   #  messages.success(request, 'Vous avez été déconnecté avec succès.')
@@ -53,34 +111,6 @@ def home(request):
 def base(request):
      return render(request,'base.html')
   # Assurez-vous d'avoir un formulaire de connexion
-
-
-from datetime import datetime
-from .models import membre
-import json
-
-def page_accueil(request):
-    membres = membre.objects.exclude(anneeNais__isnull=True)
-    current_year = datetime.now().year
-
-    ages = [current_year - m.anneeNais for m in membres if m.anneeNais and m.anneeNais > 1900]
-    
-    # Groupe les âges par tranche de 10 ans
-    groupes = {}
-    for age in ages:
-        tranche = f"{(age//10)*10}-{(age//10)*10+9}"
-        groupes[tranche] = groupes.get(tranche, 0) + 1
-
-    context = {
-        "groupes_ages_labels": json.dumps(list(groupes.keys())),
-        "groupes_ages_values": json.dumps(list(groupes.values())),
-    }
-    return render(request, "accueil.html", context)
-  
-
-
-
-
 from .forms import CustomAuthenticationForm
 
 
@@ -775,15 +805,112 @@ from django.http import HttpResponseForbidden
 
 
 from django.db.models import Sum
+
+# Helper function to check for superuser status
+def is_superuser(user):
+    return user.is_superuser
+
 @login_required
+@user_passes_test(is_superuser) # Make sure only superusers can see this
 def tableau_de_bord_global(request):
-    membres = membre.objects.prefetch_related('tontines').all()
+    
+    # DÉBUT DE L'ANALYSE DE DONNÉES GLOBAL
 
-    for membre_info in membres:
-        membre_info.total_prets = membre_info.prets_preteur.aggregate(total=Sum('montant'))['total'] or 0
-        membre_info.total_epargnes = membre_info.epargnes.aggregate(total=Sum('montant'))['total'] or 0
+    # KPI 1: Total Active Members 
+    total_membres = membre.objects.filter(actif=1).count()
 
-    return render(request, 'tableau_de_bord_global.html', {'membres': membres})
+    #  KPI 2: Total Funds Managed 
+    total_cotise = cotisation.objects.filter(est_valide=True).aggregate(total=Sum('montant'))['total'] or 0
+    total_epargne = epargne.objects.aggregate(total=Sum('montant'))['total'] or 0
+    fonds_totaux = total_cotise + total_epargne
+
+    # --- KPI 3: Total Loans Outstanding 
+    # This uses a more advanced query with F expressions
+    prets_actifs = pret.objects.filter(est_rembourse=False).annotate(
+        total_du=F('montant') * (1 + F('pourcentage') / 100)
+    ).annotate(
+        total_rembourse=Sum('remboursements__montant_rembourse')
+    )
+    
+    prets_en_cours = 0
+    for p in prets_actifs:
+        rembourse = p.total_rembourse or 0
+        prets_en_cours += (p.total_du - rembourse)
+
+
+    # --- Analysis for Charts (with Pandas) ---
+
+    # 1. Chart: Member Growth Over Time
+    '''membres_par_annee_query = membre.objects.annotate(
+        annee=ExtractYear('anneeEntree')
+    ).values('annee').annotate(
+        nombre=Count('idMembre')
+    ).order_by('annee')
+
+
+    df_membres_par_annee = pd.DataFrame(list(membres_par_annee_query))
+    membres_growth_labels = []
+    membres_growth_values = []
+    if not df_membres_par_annee.empty:
+        # Ensure 'annee' is not None and format it as a clean integer string
+        df_membres_par_annee = df_membres_par_annee.dropna(subset=['annee'])
+        membres_growth_labels = df_membres_par_annee['annee'].astype(int).astype(str).tolist()
+        membres_growth_values = df_membres_par_annee['nombre'].tolist()'''
+    
+    membres_par_annee_query = membre.objects.filter(
+        anneeEntree__isnull=False # Exclude members with no entry year
+    ).values(
+        'anneeEntree' # Group by the year field directly
+    ).annotate(
+        nombre=Count('idMembre') # Count members in each group
+    ).order_by(
+        'anneeEntree' # Order by year
+    )
+
+    df_membres_par_annee = pd.DataFrame(list(membres_par_annee_query))
+    membres_growth_labels = []
+    membres_growth_values = []
+    if not df_membres_par_annee.empty:
+        # The field name is now 'anneeEntree', not 'annee'
+        membres_growth_labels = df_membres_par_annee['anneeEntree'].astype(int).astype(str).tolist()
+        membres_growth_values = df_membres_par_annee['nombre'].tolist()
+
+    # 2. Chart: Tontine Popularity
+    tontines_avec_membres = tontines.objects.annotate(
+        num_membres=Count('membres')
+    ).order_by('-num_membres')
+
+    tontine_popularity_labels = [t.nomTontines for t in tontines_avec_membres]
+    tontine_popularity_values = [t.num_membres for t in tontines_avec_membres]
+
+
+    # --- Get the list of members for the table ---
+    membres_list = membre.objects.prefetch_related('tontines').filter(actif=1)
+
+    # =================================================================
+    # FIN DE L'ANALYSE DE DONNÉES
+    # =================================================================
+
+    context = {
+        'membres': membres_list, # For the table at the bottom
+        
+        # KPIs for the cards
+        'kpi': {
+            'total_membres': total_membres,
+            'fonds_totaux': fonds_totaux,
+            'prets_en_cours': prets_en_cours,
+        },
+        
+        # Data for the charts
+        'charts': {
+            'membres_growth_labels': membres_growth_labels,
+            'membres_growth_values': membres_growth_values,
+            'tontine_popularity_labels': tontine_popularity_labels,
+            'tontine_popularity_values': tontine_popularity_values,
+        }
+    }
+    
+    return render(request, 'tableau_de_bord_global.html', context)
 
      # Assurez-vous que l'utilisateur est connecté
    
@@ -866,41 +993,100 @@ from django.contrib.auth.decorators import login_required
 
 
 
-
+@login_required
 def tableau_de_bord(request):
-
     try:
+        # Étape 1 : Récupérer le profil du membre connecté
         membre_info = membre.objects.get(user=request.user)
-        
-        # Récupérer les tontines associées
-        tontine = membre_info.tontines.all()
-        
-        # Récupérer les prêts du membre
-        prets_info = pret.objects.filter(idMembre_preteur=membre_info) | \
-                     pret.objects.filter(idMembre_avaliste=membre_info)
-
-        # Récupérer les épargnes du membre
-        epargnes_info = epargne.objects.filter(idMembre=membre_info)
-
     except membre.DoesNotExist:
-        membre_info = None
-        tontine = []
-        prets_info = []
-        epargnes_info = []
-    except Exception as e:
-        # Gérer d'autres exceptions si nécessaire
-        print(f"Une erreur s'est produite : {e}")  # Pour le débogage
-        membre_info = None
-        tontine = []
-        prets_info = []
-        epargnes_info = []
+        # Si aucun profil 'membre' n'est associé à l'utilisateur, on affiche une page vide.
+        return render(request, 'tableau_de_bord.html', {'membre': None})
 
+    # =================================================================
+    # DÉBUT DE L'ANALYSE DE DONNÉES EN PYTHON
+    # =================================================================
+
+    # --- KPI 1 : Total Épargné ---
+    # Utilise l'ORM Django pour une agrégation SQL efficace
+    total_epargne = epargne.objects.filter(idMembre=membre_info).aggregate(total=Sum('montant'))['total'] or 0
+
+    # --- KPI 2 : Dette Actuelle ---
+    # C'est le calcul le plus complexe, parfait pour montrer votre maîtrise
+    prets_membre = pret.objects.filter(idMembre_preteur=membre_info, est_rembourse=False)
+    dette_actuelle = 0
+    for p in prets_membre:
+        montant_du = p.montant * (1 + p.pourcentage / 100)
+        total_rembourse = remboursement.objects.filter(idpret=p).aggregate(total=Sum('montant_rembourse'))['total'] or 0
+        dette_actuelle += (montant_du - total_rembourse)
+
+    # --- KPI 3 : Total Cotisé ---
+    total_cotise = cotisation.objects.filter(idMembre=membre_info, est_valide=True).aggregate(total=Sum('montant'))['total'] or 0
+
+    # --- KPI 4 : Nombre de Tontines Actives ---
+    tontines_actives = membre_info.tontines.count()
+
+
+    # --- Analyse pour les Graphiques (avec Pandas) ---
+
+    # 1. Graphique "Répartition des Dépenses" (Pie Chart)
+    remboursements_faits = remboursement.objects.filter(idMembre=membre_info).aggregate(total=Sum('montant_rembourse'))['total'] or 0
+    
+    depenses_data = {
+        'Catégorie': ['Cotisations', 'Épargnes', 'Remboursements'],
+        'Montant': [total_cotise, total_epargne, remboursements_faits]
+    }
+    df_depenses = pd.DataFrame(depenses_data)
+    # Filtrer les catégories avec un montant nul pour ne pas encombrer le graphique
+    df_depenses = df_depenses[df_depenses['Montant'] > 0]
+
+
+    # 2. Graphique "Historique des Cotisations" (Bar Chart)
+    six_months_ago = timezone.now() - timezone.timedelta(days=180)
+    cotisations_recentes = cotisation.objects.filter(
+        idMembre=membre_info,
+        est_valide=True,
+        date_paiement__gte=six_months_ago
+    ).values('date_paiement', 'montant')
+
+    df_cotis_hist = pd.DataFrame(list(cotisations_recentes))
+    cotis_par_mois_labels = []
+    cotis_par_mois_values = []
+    if not df_cotis_hist.empty:
+        df_cotis_hist['date_paiement'] = pd.to_datetime(df_cotis_hist['date_paiement'])
+        # Grouper par mois et sommer les montants
+        cotis_par_mois = df_cotis_hist.set_index('date_paiement').resample('M')['montant'].sum()
+        # Formater pour Chart.js
+        cotis_par_mois_labels = cotis_par_mois.index.strftime('%B %Y').tolist()
+        cotis_par_mois_values = cotis_par_mois.values.tolist()
+
+
+    # =================================================================
+    # FIN DE L'ANALYSE DE DONNÉES
+    # =================================================================
+
+    # Préparation du contexte à envoyer au template
     context = {
         'membre': membre_info,
-        'tontine': tontine,
-        'prets': prets_info,
-        'epargnes': epargnes_info,
-        #'notifications': request.user.notifications_utilisateur.all(),
+        
+        # Les KPIs pour les cartes
+        'kpi': {
+            'total_epargne': total_epargne,
+            'dette_actuelle': dette_actuelle,
+            'total_cotise': total_cotise,
+            'tontines_actives': tontines_actives,
+        },
+
+        # Les données pour les graphiques
+        'charts': {
+            'depenses_labels': df_depenses['Catégorie'].tolist(),
+            'depenses_values': df_depenses['Montant'].tolist(),
+            'cotis_hist_labels': cotis_par_mois_labels,
+            'cotis_hist_values': cotis_par_mois_values,
+        },
+
+        # On garde les listes d'objets si vous voulez toujours les afficher
+        'tontines': membre_info.tontines.all(),
+        'prets': pret.objects.filter(idMembre_preteur=membre_info),
     }
     
     return render(request, 'tableau_de_bord.html', context)
@@ -1175,32 +1361,74 @@ def dons(request):
    
 
 
+# Helper function to generate a random password
+def generate_random_password(length=10):
+    characters = string.ascii_letters + string.digits
+    return ''.join(random.choice(characters) for i in range(length))
+
+# Helper function to check for superuser status
+def is_superuser(user):
+    return user.is_superuser
+
+
+
+@user_passes_test(is_superuser)
 def ajouter_membre(request):
     if request.method == 'POST':
-        form = MembreForm(request.POST)
+        form = SuperuserCreateMembreForm(request.POST) # Utilise le nouveau formulaire
         if form.is_valid():
-            membre_instance = form.save(commit=False)
-
-            # Créer un utilisateur sans mot de passe
-            user = User(
-                username=membre_instance.login,
-                email=membre_instance.email,
-                is_superuser=membre_instance.is_admin,
-                is_staff=membre_instance.is_admin
-            )
-            user.set_unusable_password()
+            data = form.cleaned_data
+            email = data['email']
             
-            user.save()
+            try:
+                with transaction.atomic():
+                    # 1. Générer un mot de passe temporaire
+                    temp_password = generate_random_password()
 
-            membre_instance.user = user
-            membre_instance.save()
+                    # 2. Créer le compte Utilisateur Django
+                    new_user = User.objects.create_user(
+                        username=email,
+                        email=email,
+                        password=temp_password,
+                        first_name=data['prenom'],
+                        last_name=data['nom']
+                    )
+                    
+                    # 3. Créer le profil 'membre' correspondant et le lier
+                    membre.objects.create(
+                        user=new_user,
+                        nom=data['nom'],
+                        prenom=data['prenom'],
+                        email=email,
+                        login=email,
+                        anneeEntree=data['anneeEntree'],
+                        sexe=data['sexe'],
+                        engagement=data['engagement'],
+                        telephone1=data['telephone1'],
+                        anneeNais=data.get('anneeNais'),
+                        telephone2=data.get('telephone2'),
+                        actif=1
+                    )
+                
+                # 4. Afficher les identifiants à l'administrateur
+                success_message = (
+                    f"Le membre '{data['prenom']} {data['nom']}' a été créé avec succès. "
+                    f"Le nouveau compte est : "
+                    f"Nom d'utilisateur = {email} | "
+                    f"Mot de passe temporaire = {temp_password}"
+                )
+                messages.success(request, success_message)
+                
+                #return redirect('membres') # Redirige vers la liste des membres
+                form = SuperuserCreateMembreForm()
 
-            messages.success(request, "Membre ajouté. Il devra définir son mot de passe à la première connexion.")
-            return redirect('membres')
-    else:
-        form = MembreForm()
+            except Exception as e:
+                messages.error(request, f"Une erreur inattendue est survenue : {e}")
 
-    return render(request, 'ajouter_membre.html', {'form': form})  
+    else: # Requête GET
+        form = SuperuserCreateMembreForm()
+
+    return render(request, 'ajouter_membre.html', {'form': form})
 
 
 
@@ -1956,3 +2184,13 @@ def afficher_prets(request, idMembre):
         'prets_avaliste': prets_avaliste,
         'prets_preteur': prets_preteur,
     })
+
+
+
+
+def landing_page_view(request):
+    """
+    Vue simple pour afficher la page de présentation.
+    """
+    return render(request, 'landing.html')
+

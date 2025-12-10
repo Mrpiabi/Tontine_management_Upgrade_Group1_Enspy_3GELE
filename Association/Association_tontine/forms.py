@@ -8,7 +8,12 @@ from django.contrib.auth.hashers import check_password
 from django.contrib.auth.hashers import make_password
 from Association_tontine.models import membre
 
+from django.utils import timezone # Import timezone to get the current year
 
+
+ENGAGEMENT_CHOICES = [...]
+SEXE_CHOICES = [...]
+#Added New form for creation of members 
 
 class CustomAuthenticationForm(forms.Form):
     login = forms.CharField(required=True)
@@ -293,3 +298,99 @@ class CotisationForm(forms.ModelForm):
             'penaliteDefaillanceNonBenef': 'Pénalité (non bénéficiaire)',
             'miseAPrix': 'Mise à prix',
         }
+
+
+
+# Define choices here to keep them consistent
+ENGAGEMENT_CHOICES = [
+    ('marie(e)', 'Marié(e)'),
+    ('celibataire', 'Célibataire'),
+    ('divorce(e)', 'Divorcé(e)')
+]
+SEXE_CHOICES = [
+    ('M', 'Masculin'),
+    ('F', 'Féminin')
+]
+
+# In Association_tontine/forms.py
+
+
+class SuperuserCreateMembreForm(forms.Form):
+    # Fields needed for both User and membre models
+    nom = forms.CharField(max_length=50, label="Nom de famille", required=True)
+    prenom = forms.CharField(max_length=50, label="Prénom(s)", required=True)
+    
+    # --- IMPROVEMENT 1: CONFIRM EMAIL ---
+    email = forms.EmailField(
+        label="Adresse Email", 
+        required=True,
+        help_text="Cette adresse servira de nom d'utilisateur."
+    )
+    email_confirm = forms.EmailField(
+        label="Confirmer l'adresse Email", 
+        required=True
+    )
+    
+    anneeEntree = forms.IntegerField(label="Année d'Entrée", required=True)
+    sexe = forms.ChoiceField(choices=SEXE_CHOICES, label="Sexe")
+    engagement = forms.ChoiceField(choices=ENGAGEMENT_CHOICES, label="Statut matrimonial")
+    telephone1 = forms.CharField(max_length=15, label="Téléphone principal", required=True)
+    
+    # Optional fields
+    anneeNais = forms.IntegerField(label="Année de Naissance", required=False)
+    telephone2 = forms.CharField(max_length=15, label="Téléphone secondaire", required=False)
+
+    # --- VALIDATION LOGIC ---
+
+    def clean_email(self):
+        """Custom validation to ensure the email is unique across the User model."""
+        email = self.cleaned_data.get('email')
+        if User.objects.filter(email=email).exists():
+            raise forms.ValidationError("Un utilisateur avec cette adresse email existe déjà.")
+        return email
+
+    # --- IMPROVEMENT 2A: VALIDATE YEARS (INDIVIDUAL FIELDS) ---
+    def clean_anneeNais(self):
+        """Validate the birth year."""
+        annee_nais = self.cleaned_data.get('anneeNais')
+        current_year = timezone.now().year
+        
+        if annee_nais: # Only validate if the field is filled out
+            if annee_nais < 1900 or annee_nais > current_year:
+                raise forms.ValidationError(f"L'année de naissance doit être entre 1900 et {current_year}.")
+        return annee_nais
+
+    def clean_anneeEntree(self):
+        """Validate the entry year."""
+        annee_entree = self.cleaned_data.get('anneeEntree')
+        current_year = timezone.now().year
+
+        if annee_entree:
+            if annee_entree < 1980 or annee_entree > current_year:
+                raise forms.ValidationError(f"L'année d'entrée doit être entre 1980 et {current_year}.")
+        return annee_entree
+
+    # --- IMPROVEMENT 1B & 2B: CROSS-FIELD VALIDATION ---
+    def clean(self):
+        """
+        This method is for validations that depend on multiple fields at once.
+        It runs after all the individual clean_<fieldname> methods.
+        """
+        cleaned_data = super().clean()
+        
+        # 1. Confirm Email Validation
+        email = cleaned_data.get("email")
+        email_confirm = cleaned_data.get("email_confirm")
+
+        if email and email_confirm and email != email_confirm:
+            # Raise an error that is not tied to a specific field
+            raise forms.ValidationError("Les adresses email ne correspondent pas.")
+
+        # 2. Check that entry year is not before birth year
+        annee_nais = cleaned_data.get('anneeNais')
+        annee_entree = cleaned_data.get('anneeEntree')
+
+        if annee_nais and annee_entree and annee_entree < annee_nais:
+            raise forms.ValidationError("L'année d'entrée ne peut pas être antérieure à l'année de naissance.")
+            
+        return cleaned_data
