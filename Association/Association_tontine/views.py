@@ -24,6 +24,10 @@ from django.contrib.auth.decorators import login_required, user_passes_test
 from django.contrib.auth.models import User
 import string
 import random
+from django.conf import settings # Import settings
+import matplotlib.pyplot as plt
+import seaborn as sns
+import os # Import os to handle file paths
 from datetime import datetime
 import json
 # Import our NEW form
@@ -814,94 +818,79 @@ def is_superuser(user):
 @user_passes_test(is_superuser) # Make sure only superusers can see this
 def tableau_de_bord_global(request):
     
-    # DÉBUT DE L'ANALYSE DE DONNÉES GLOBAL
 
-    # KPI 1: Total Active Members 
-    total_membres = membre.objects.filter(actif=1).count()
+    # DATA FETCHING & ANALYSIS WITH PANDAS
+    # --- Fetch data into Pandas DataFrames ---
+    membres_qs = membre.objects.filter(actif=1).values()
+    cotisations_qs = cotisation.objects.filter(est_valide=True).values()
+    epargnes_qs = epargne.objects.values()
+    prets_qs = pret.objects.values('idpret', 'montant', 'pourcentage', 'est_rembourse')
+    remboursements_qs = remboursement.objects.values('idpret_id', 'montant_rembourse')
 
-    #  KPI 2: Total Funds Managed 
-    total_cotise = cotisation.objects.filter(est_valide=True).aggregate(total=Sum('montant'))['total'] or 0
-    total_epargne = epargne.objects.aggregate(total=Sum('montant'))['total'] or 0
+    df_membres = pd.DataFrame(list(membres_qs))
+    df_cotisations = pd.DataFrame(list(cotisations_qs))
+    df_epargnes = pd.DataFrame(list(epargnes_qs))
+    df_prets = pd.DataFrame(list(prets_qs))
+    df_remboursements = pd.DataFrame(list(remboursements_qs))
+
+    # --- KPI 1: Total Active Members ---
+    total_membres = len(df_membres) if not df_membres.empty else 0
+
+    # --- KPI 2: Total Funds Managed ---
+    total_cotise = df_cotisations['montant'].sum() if not df_cotisations.empty else 0
+    total_epargne = df_epargnes['montant'].sum() if not df_epargnes.empty else 0
     fonds_totaux = total_cotise + total_epargne
 
-    # --- KPI 3: Total Loans Outstanding 
-    # This uses a more advanced query with F expressions
-    prets_actifs = pret.objects.filter(est_rembourse=False).annotate(
-        total_du=F('montant') * (1 + F('pourcentage') / 100)
-    ).annotate(
-        total_rembourse=Sum('remboursements__montant_rembourse')
-    )
-    
+    # --- KPI 3: Total Loans Outstanding ---
     prets_en_cours = 0
-    for p in prets_actifs:
-        rembourse = p.total_rembourse or 0
-        prets_en_cours += (p.total_du - rembourse)
+    if not df_prets.empty and 'est_rembourse' in df_prets.columns:
+        # Filter for active loans
+        df_prets_actifs = df_prets[df_prets['est_rembourse'] == False]
+        if not df_prets_actifs.empty:
+            # Calculate total amount due (principal + interest)
+            df_prets_actifs['total_du'] = df_prets_actifs['montant'] * (1 + df_prets_actifs['pourcentage'] / 100)
+            
+            if not df_remboursements.empty:
+                # Calculate total reimbursed for each loan
+                df_remb_par_pret = df_remboursements.groupby('idpret_id')['montant_rembourse'].sum().reset_index()
+                # Merge the reimbursement data back to the loans dataframe
+                df_prets_actifs = pd.merge(df_prets_actifs, df_remb_par_pret, left_on='idpret', right_on='idpret_id', how='left')
+                df_prets_actifs['montant_rembourse'] = df_prets_actifs['montant_rembourse'].fillna(0) # Fill NaNs for loans with no reimbursements
+            else:
+                df_prets_actifs['montant_rembourse'] = 0
+
+            # Calculate remaining amount for each loan and sum it up
+            df_prets_actifs['montant_restant'] = df_prets_actifs['total_du'] - df_prets_actifs['montant_rembourse']
+            prets_en_cours = df_prets_actifs['montant_restant'].sum()
 
 
-    # --- Analysis for Charts (with Pandas) ---
+    # --- Analysis for Charts ---
 
     # 1. Chart: Member Growth Over Time
-    '''membres_par_annee_query = membre.objects.annotate(
-        annee=ExtractYear('anneeEntree')
-    ).values('annee').annotate(
-        nombre=Count('idMembre')
-    ).order_by('annee')
-
-
-    df_membres_par_annee = pd.DataFrame(list(membres_par_annee_query))
     membres_growth_labels = []
     membres_growth_values = []
-    if not df_membres_par_annee.empty:
-        # Ensure 'annee' is not None and format it as a clean integer string
-        df_membres_par_annee = df_membres_par_annee.dropna(subset=['annee'])
-        membres_growth_labels = df_membres_par_annee['annee'].astype(int).astype(str).tolist()
-        membres_growth_values = df_membres_par_annee['nombre'].tolist()'''
-    
-    membres_par_annee_query = membre.objects.filter(
-        anneeEntree__isnull=False # Exclude members with no entry year
-    ).values(
-        'anneeEntree' # Group by the year field directly
-    ).annotate(
-        nombre=Count('idMembre') # Count members in each group
-    ).order_by(
-        'anneeEntree' # Order by year
-    )
-
-    df_membres_par_annee = pd.DataFrame(list(membres_par_annee_query))
-    membres_growth_labels = []
-    membres_growth_values = []
-    if not df_membres_par_annee.empty:
-        # The field name is now 'anneeEntree', not 'annee'
-        membres_growth_labels = df_membres_par_annee['anneeEntree'].astype(int).astype(str).tolist()
-        membres_growth_values = df_membres_par_annee['nombre'].tolist()
-
+    if not df_membres.empty and 'anneeEntree' in df_membres.columns:
+        df_membres_clean = df_membres.dropna(subset=['anneeEntree']) # Remove rows with no entry year
+        membres_par_annee = df_membres_clean.groupby('anneeEntree').size()
+        membres_growth_labels = membres_par_annee.index.astype(int).astype(str).tolist()
+        membres_growth_values = membres_par_annee.values.tolist()
+        
     # 2. Chart: Tontine Popularity
-    tontines_avec_membres = tontines.objects.annotate(
-        num_membres=Count('membres')
-    ).order_by('-num_membres')
-
-    tontine_popularity_labels = [t.nomTontines for t in tontines_avec_membres]
-    tontine_popularity_values = [t.num_membres for t in tontines_avec_membres]
-
+   
+    tontines_avec_membres_query = tontines.objects.annotate(num_membres=Count('membres')).order_by('-num_membres')
+    tontine_popularity_labels = [t.nomTontines for t in tontines_avec_membres_query]
+    tontine_popularity_values = [t.num_membres for t in tontines_avec_membres_query]
 
     # --- Get the list of members for the table ---
     membres_list = membre.objects.prefetch_related('tontines').filter(actif=1)
 
-    # =================================================================
-    # FIN DE L'ANALYSE DE DONNÉES
-    # =================================================================
-
     context = {
-        'membres': membres_list, # For the table at the bottom
-        
-        # KPIs for the cards
+        'membres': membres_list,
         'kpi': {
             'total_membres': total_membres,
             'fonds_totaux': fonds_totaux,
             'prets_en_cours': prets_en_cours,
         },
-        
-        # Data for the charts
         'charts': {
             'membres_growth_labels': membres_growth_labels,
             'membres_growth_values': membres_growth_values,
@@ -1011,7 +1000,6 @@ def tableau_de_bord(request):
     total_epargne = epargne.objects.filter(idMembre=membre_info).aggregate(total=Sum('montant'))['total'] or 0
 
     # --- KPI 2 : Dette Actuelle ---
-    # C'est le calcul le plus complexe, parfait pour montrer votre maîtrise
     prets_membre = pret.objects.filter(idMembre_preteur=membre_info, est_rembourse=False)
     dette_actuelle = 0
     for p in prets_membre:
@@ -1059,10 +1047,6 @@ def tableau_de_bord(request):
         cotis_par_mois_labels = cotis_par_mois.index.strftime('%B %Y').tolist()
         cotis_par_mois_values = cotis_par_mois.values.tolist()
 
-
-    # =================================================================
-    # FIN DE L'ANALYSE DE DONNÉES
-    # =================================================================
 
     # Préparation du contexte à envoyer au template
     context = {

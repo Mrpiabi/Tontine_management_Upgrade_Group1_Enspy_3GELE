@@ -1,5 +1,6 @@
 <!-- TEMPLATES/tableau_de_bord_global.html -->
 {% extends 'base.html' %}
+{% load static %} {# Load the static tag library at the top #}
 
 {% block content %}
 <style>
@@ -74,11 +75,11 @@
         </div>
         <div class="kpi-card card-fonds">
             <div class="label">Fonds Totaux Gérés</div>
-            <div class="value">{{ kpi.fonds_totaux|floatformat:0 }} <small>FCFA</small></div>
+            <div class="value">{{ kpi.fonds_totaux|floatformat:"0" }} <small>FCFA</small></div>
         </div>
         <div class="kpi-card card-prets">
             <div class="label">Prêts en Cours</div>
-            <div class="value">{{ kpi.prets_en_cours|floatformat:0 }} <small>FCFA</small></div>
+            <div class="value">{{ kpi.prets_en_cours|floatformat:"0" }} <small>FCFA</small></div>
         </div>
     </div>
 
@@ -136,7 +137,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Chart 1: Member Growth (Line Chart) ---
     const growthLabels = {{ charts.membres_growth_labels|safe }};
     const growthValues = {{ charts.membres_growth_values|safe }};
-    if (growthLabels.length > 0) {
+    if (growthLabels && growthLabels.length > 0) {
         const ctxGrowth = document.getElementById('growthChart').getContext('2d');
         new Chart(ctxGrowth, {
             type: 'line',
@@ -158,7 +159,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Chart 2: Tontine Popularity (Bar Chart) ---
     const popularityLabels = {{ charts.tontine_popularity_labels|safe }};
     const popularityValues = {{ charts.tontine_popularity_values|safe }};
-    if (popularityLabels.length > 0) {
+    if (popularityLabels && popularityLabels.length > 0) {
         const ctxPopularity = document.getElementById('popularityChart').getContext('2d');
         new Chart(ctxPopularity, {
             type: 'bar',
@@ -172,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             options: { 
                 responsive: true, 
-                indexAxis: 'y', // Makes it a horizontal bar chart, easier to read
+                indexAxis: 'y', // Makes it a horizontal bar chart
                 plugins: { legend: { display: false } }
             }
         });
