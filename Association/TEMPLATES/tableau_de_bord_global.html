@@ -1,6 +1,7 @@
 <!-- TEMPLATES/tableau_de_bord_global.html -->
 {% extends 'base.html' %}
-{% load static %} {# Load the static tag library at the top #}
+{% load static %}
+{% load humanize %} {# Load humanize library for number formatting #}
 
 {% block content %}
 <style>
@@ -9,7 +10,10 @@
     .dashboard-container {
         font-family: 'Poppins', sans-serif;
         background-color: #f8f9fa;
-        padding: 30px;
+        padding: 20px;
+    }
+    .dashboard-header {
+        margin-bottom: 30px;
     }
     .dashboard-header h1 { font-weight: 700; color: #343a40; }
     .dashboard-header p { color: #6c757d; font-size: 1.1rem; }
@@ -27,7 +31,7 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
         border-left: 5px solid;
     }
-    .kpi-card .label { font-size: 1rem; color: #6c757d; text-transform: uppercase; margin-bottom: 5px; }
+    .kpi-card .label { font-size: 1rem; color: #6c757d; text-transform: uppercase; margin-bottom: 5px; font-weight: 600; }
     .kpi-card .value { font-size: 2.2rem; font-weight: 700; color: #343a40; }
     
     .card-membres { border-color: #007bff; }
@@ -47,6 +51,8 @@
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
     }
     .chart-container h3 { margin-top: 0; font-weight: 600; text-align: center; color: #495057; }
+    .chart-container img { max-width: 100%; height: auto; border-radius: 5px; }
+    .no-data-message { display: flex; justify-content: center; align-items: center; height: 300px; color: #6c757d; background-color: #f1f3f5; border-radius: 10px; }
 
     .table-container {
         background: white;
@@ -75,23 +81,32 @@
         </div>
         <div class="kpi-card card-fonds">
             <div class="label">Fonds Totaux Gérés</div>
-            <div class="value">{{ kpi.fonds_totaux|floatformat:"0" }} <small>FCFA</small></div>
+            <div class="value">{{ kpi.fonds_totaux|floatformat:"0"|intcomma }} <small>FCFA</small></div>
         </div>
         <div class="kpi-card card-prets">
             <div class="label">Prêts en Cours</div>
-            <div class="value">{{ kpi.prets_en_cours|floatformat:"0" }} <small>FCFA</small></div>
+            <div class="value">{{ kpi.prets_en_cours|floatformat:"0"|intcomma }} <small>FCFA</small></div>
         </div>
     </div>
 
     <!-- Charts -->
     <div class="charts-grid">
         <div class="chart-container">
-            <h3>Croissance des Membres</h3>
-            <canvas id="growthChart"></canvas>
-        </div>
-        <div class="chart-container">
             <h3>Popularité des Tontines</h3>
-            <canvas id="popularityChart"></canvas>
+            {% if chart_paths.popularity_chart %}
+                <img src="{% static chart_paths.popularity_chart %}?v={{ NOW.timestamp }}" alt="Graphique de la popularité des tontines">
+            {% else %}
+                <div class="no-data-message"><p>Pas de données disponibles pour ce graphique.</p></div>
+            {% endif %}
+        </div>
+        
+        <div class="chart-container">
+            <h3>Croissance des Membres</h3>
+            {% if chart_paths.growth_chart %}
+                <img src="{% static chart_paths.growth_chart %}?v={{ NOW.timestamp }}" alt="Graphique de la croissance des membres">
+            {% else %}
+                <div class="no-data-message"><p>Pas de données disponibles pour ce graphique.</p></div>
+            {% endif %}
         </div>
     </div>
 
@@ -102,11 +117,7 @@
             <table class="table">
                 <thead>
                     <tr>
-                        <th>Nom</th>
-                        <th>Prénom</th>
-                        <th>Email</th>
-                        <th>Année d'Entrée</th>
-                        <th>Tontines</th>
+                        <th>Nom</th><th>Prénom</th><th>Email</th><th>Année d'Entrée</th><th>Tontines</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -124,6 +135,10 @@
                             {% endfor %}
                         </td>
                     </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" style="text-align: center;">Aucun membre actif trouvé.</td>
+                    </tr>
                     {% endfor %}
                 </tbody>
             </table>
@@ -131,53 +146,4 @@
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // --- Chart 1: Member Growth (Line Chart) ---
-    const growthLabels = {{ charts.membres_growth_labels|safe }};
-    const growthValues = {{ charts.membres_growth_values|safe }};
-    if (growthLabels && growthLabels.length > 0) {
-        const ctxGrowth = document.getElementById('growthChart').getContext('2d');
-        new Chart(ctxGrowth, {
-            type: 'line',
-            data: {
-                labels: growthLabels,
-                datasets: [{
-                    label: 'Nouveaux Membres',
-                    data: growthValues,
-                    borderColor: '#007bff',
-                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                    fill: true,
-                    tension: 0.1
-                }]
-            },
-            options: { responsive: true, plugins: { legend: { display: false } } }
-        });
-    }
-
-    // --- Chart 2: Tontine Popularity (Bar Chart) ---
-    const popularityLabels = {{ charts.tontine_popularity_labels|safe }};
-    const popularityValues = {{ charts.tontine_popularity_values|safe }};
-    if (popularityLabels && popularityLabels.length > 0) {
-        const ctxPopularity = document.getElementById('popularityChart').getContext('2d');
-        new Chart(ctxPopularity, {
-            type: 'bar',
-            data: {
-                labels: popularityLabels,
-                datasets: [{
-                    label: 'Nombre de Membres',
-                    data: popularityValues,
-                    backgroundColor: ['#28a745', '#ffc107', '#17a2b8', '#6f42c1', '#fd7e14'],
-                }]
-            },
-            options: { 
-                responsive: true, 
-                indexAxis: 'y', // Makes it a horizontal bar chart
-                plugins: { legend: { display: false } }
-            }
-        });
-    }
-});
-</script>
 {% endblock %}

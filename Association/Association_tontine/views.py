@@ -25,6 +25,8 @@ from django.contrib.auth.models import User
 import string
 import random
 from django.conf import settings # Import settings
+import matplotlib
+matplotlib.use('Agg') # Set non-interactive backend BEFORE importing pyplot
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os # Import os to handle file paths
@@ -833,55 +835,76 @@ def tableau_de_bord_global(request):
     df_prets = pd.DataFrame(list(prets_qs))
     df_remboursements = pd.DataFrame(list(remboursements_qs))
 
-    # --- KPI 1: Total Active Members ---
+    # KPI 1: Total Active Members 
     total_membres = len(df_membres) if not df_membres.empty else 0
 
-    # --- KPI 2: Total Funds Managed ---
+    # KPI 2: Total Funds Managed 
     total_cotise = df_cotisations['montant'].sum() if not df_cotisations.empty else 0
     total_epargne = df_epargnes['montant'].sum() if not df_epargnes.empty else 0
     fonds_totaux = total_cotise + total_epargne
 
-    # --- KPI 3: Total Loans Outstanding ---
+    # KPI 3: Total Loans Outstanding 
     prets_en_cours = 0
     if not df_prets.empty and 'est_rembourse' in df_prets.columns:
-        # Filter for active loans
-        df_prets_actifs = df_prets[df_prets['est_rembourse'] == False]
+        df_prets_actifs = df_prets[df_prets['est_rembourse'] == False].copy()
         if not df_prets_actifs.empty:
-            # Calculate total amount due (principal + interest)
             df_prets_actifs['total_du'] = df_prets_actifs['montant'] * (1 + df_prets_actifs['pourcentage'] / 100)
             
             if not df_remboursements.empty:
-                # Calculate total reimbursed for each loan
                 df_remb_par_pret = df_remboursements.groupby('idpret_id')['montant_rembourse'].sum().reset_index()
-                # Merge the reimbursement data back to the loans dataframe
                 df_prets_actifs = pd.merge(df_prets_actifs, df_remb_par_pret, left_on='idpret', right_on='idpret_id', how='left')
-                df_prets_actifs['montant_rembourse'] = df_prets_actifs['montant_rembourse'].fillna(0) # Fill NaNs for loans with no reimbursements
+                df_prets_actifs['montant_rembourse'] = df_prets_actifs['montant_rembourse'].fillna(0)
             else:
                 df_prets_actifs['montant_rembourse'] = 0
 
-            # Calculate remaining amount for each loan and sum it up
             df_prets_actifs['montant_restant'] = df_prets_actifs['total_du'] - df_prets_actifs['montant_rembourse']
             prets_en_cours = df_prets_actifs['montant_restant'].sum()
 
 
-    # --- Analysis for Charts ---
+    # PLOT GENERATION (USING MATPLOTLIB & SEABORN)
+    save_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'dashboard')
+    os.makedirs(save_path, exist_ok=True) # verify if the file already exist if not creates one 
 
-    # 1. Chart: Member Growth Over Time
-    membres_growth_labels = []
-    membres_growth_values = []
+    #  Plot 1: Tontine Popularity 
+    popularity_chart_path_url = None
+    tontines_popularity = tontines.objects.annotate(num_membres=Count('membres')).order_by('num_membres')
+    if tontines_popularity:
+        labels = [t.nomTontines for t in tontines_popularity]
+        values = [t.num_membres for t in tontines_popularity]
+        plt.figure(figsize=(10, 6))
+        sns.set_theme(style="whitegrid")
+        ax = sns.barplot(x=values, y=labels, palette="viridis", orient='h')
+        ax.set_title('Popularité des Tontines', fontsize=16, weight='bold')
+        ax.set_xlabel('Nombre de Membres', fontsize=12)
+        ax.set_ylabel('Tontine', fontsize=12)
+        plt.tight_layout()
+        popularity_chart_path = os.path.join(save_path, 'popularity_chart.png')
+        plt.savefig(popularity_chart_path)
+        plt.close()
+        popularity_chart_path_url = 'images/dashboard/popularity_chart.png'
+
+    # --- Plot 2: Member Growth ---
+    growth_chart_path_url = None
     if not df_membres.empty and 'anneeEntree' in df_membres.columns:
-        df_membres_clean = df_membres.dropna(subset=['anneeEntree']) # Remove rows with no entry year
-        membres_par_annee = df_membres_clean.groupby('anneeEntree').size()
-        membres_growth_labels = membres_par_annee.index.astype(int).astype(str).tolist()
-        membres_growth_values = membres_par_annee.values.tolist()
-        
-    # 2. Chart: Tontine Popularity
-   
-    tontines_avec_membres_query = tontines.objects.annotate(num_membres=Count('membres')).order_by('-num_membres')
-    tontine_popularity_labels = [t.nomTontines for t in tontines_avec_membres_query]
-    tontine_popularity_values = [t.num_membres for t in tontines_avec_membres_query]
+        df_membres_clean = df_membres.dropna(subset=['anneeEntree'])
+        if not df_membres_clean.empty:
+            membres_par_annee = df_membres_clean.groupby('anneeEntree').size()
+            labels = membres_par_annee.index.astype(int).astype(str).tolist()
+            values = membres_par_annee.values.tolist()
+            plt.figure(figsize=(10, 6))
+            sns.set_theme(style="whitegrid")
+            ax = sns.lineplot(x=labels, y=values, marker='o', color='#007bff', linewidth=2.5)
+            ax.set_title('Croissance des Membres par Année d\'Entrée', fontsize=16, weight='bold')
+            ax.set_xlabel('Année', fontsize=12)
+            ax.set_ylabel('Nombre de Nouveaux Membres', fontsize=12)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            growth_chart_path = os.path.join(save_path, 'growth_chart.png')
+            plt.savefig(growth_chart_path)
+            plt.close()
+            growth_chart_path_url = 'images/dashboard/growth_chart.png'
 
-    # --- Get the list of members for the table ---
+    # --- Prepare context for the template ---
     membres_list = membre.objects.prefetch_related('tontines').filter(actif=1)
 
     context = {
@@ -891,12 +914,11 @@ def tableau_de_bord_global(request):
             'fonds_totaux': fonds_totaux,
             'prets_en_cours': prets_en_cours,
         },
-        'charts': {
-            'membres_growth_labels': membres_growth_labels,
-            'membres_growth_values': membres_growth_values,
-            'tontine_popularity_labels': tontine_popularity_labels,
-            'tontine_popularity_values': tontine_popularity_values,
-        }
+        'chart_paths': {
+            'popularity_chart': popularity_chart_path_url,
+            'growth_chart': growth_chart_path_url,
+        },
+        'NOW': timezone.now()
     }
     
     return render(request, 'tableau_de_bord_global.html', context)
