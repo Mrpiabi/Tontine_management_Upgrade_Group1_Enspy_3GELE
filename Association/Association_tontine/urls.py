@@ -1,4 +1,6 @@
-from django import views
+from django.urls import path
+#from django import views
+from . import views
 from django.urls import path,include
 from . views import *
 from django.contrib import admin
@@ -7,7 +9,6 @@ from Association_tontine.views import (
     landing_page_view,
     tableau_de_bord, tableau_de_bord_global
 )
-from django.urls import path
 from pathlib import Path
 #BASE_DIR= Path(_file_).resolve().parent.parent
 #from .views import deconnexion
@@ -38,22 +39,24 @@ urlpatterns = [
 
     # les choix
     #path('page/', page, name='page'),
-    path('soumettre_demande/', soumettre_demande, name='soumettre_demande'),
+    #path('soumettre_demande/', soumettre_demande, name='soumettre_demande'),
     path('voir_notifications/<int:notification_id>/traiter/', traiter_notification, name='traiter_notification'),
     path('notification_succes/', notification_succes, name='notification_succes'),
-    path('confirmation_demande/', confirmation_demande, name='confirmation_demande'),
+    #path('confirmation_demande/', confirmation_demande, name='confirmation_demande'),
     path('notifications/', afficher_notifications, name='notifications'),
-    path('notification/<int:notification_id>/valider/', valider_demande, name='valider_demande'),
     path('notification/<int:notification_id>/Supprimer/', supprimer_notification, name='supprimer_notification'),
-    path('demande/<int:notification_id>/Refuser/',refuser_demande, name='refuser_demande'),
-    path('gerer_notifications/', gerer_notifications, name='gerer_notifications'),
+    #path('gerer_notifications/', gerer_notifications, name='gerer_notifications'),
     path('modifier_informations/', modifier_informations, name='modifier_informations'),
     path('success_page/', success_page, name='success_page'),
     path('modifier_personnelles/', modifier_personnelles, name='modifier_personnelles'),
     path('choix_tontine/<int:user_id>/', choix_tontine, name='choix_tontine'),
-    path('voir_notifications/', voir_notifications, name='voir_notifications'),
     path('notification_super_utilisateur/<int:user_id>/', notification_super_utilisateur, name='notification_super_utilisateur'),
     path('choix_parametres_tontine/<int:user_id>/', choix_parametres_tontine, name='choix_parametres_tontine'),
+    # URL for the admin to see the list of requests
+    path('admin/demandes/', views.gerer_demandes, name='gerer_demandes'),
+    
+    # NEW, UNIFIED URL for processing a request
+    path('admin/demandes/<int:demande_id>/traiter/', views.traiter_demande, name='traiter_demande'),
     
  
     # Gestion des tontines

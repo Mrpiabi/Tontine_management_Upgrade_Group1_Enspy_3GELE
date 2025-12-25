@@ -1,0 +1,104 @@
+<!-- templates/demandes/gerer_demandes.html -->
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<style>
+    .dashboard-container { font-family: 'Poppins', sans-serif; background-color: #f8f9fa; padding: 20px; }
+    /* ... (copy styles from your tableau_de_bord_global.html) ... */
+    .table th, .table td { vertical-align: middle; }
+    .status-badge { padding: .25em .6em; font-size: .75em; font-weight: 700; border-radius: .25rem; }
+    .status-en_attente { color: #856404; background-color: #fff3cd; }
+</style>
+
+<div class="dashboard-container">
+    <div class="dashboard-header">
+        <h2>Gestion des Demandes des Membres</h2>
+    </div>
+
+    <!-- KPIs -->
+    <div class="kpi-grid">
+        <div class="kpi-card card-prets">
+            <div class="label">Demandes en Attente</div>
+            <div class="value">{{ kpi.en_attente }}</div>
+        </div>
+        <div class="kpi-card card-fonds">
+            <div class="label">Validées Aujourd'hui</div>
+            <div class="value">{{ kpi.validees_aujourdhui }}</div>
+        </div>
+        <div class="kpi-card card-membres">
+            <div class="label">Refusées Aujourd'hui</div>
+            <div class="value">{{ kpi.refusees_aujourdhui }}</div>
+        </div>
+    </div>
+    
+    <!-- Chart -->
+    <div class="charts-grid" style="grid-template-columns: 1fr;">
+        <div class="chart-container">
+            <h3>Demandes par Type</h3>
+            <canvas id="demandesChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Pending Requests Table -->
+    <div class="table-container">
+        <h3>Demandes en Attente de Validation</h3>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Utilisateur</th>
+                        <th>Type de Demande</th>
+                        <th>Détails</th>
+                        <th>Statut</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for demande in demandes_en_attente %}
+                    <tr>
+                        <td>{{ demande.date_creation|date:"d M Y, H:i" }}</td>
+                        <td>{{ demande.utilisateur.username }}</td>
+                        <td>{{ demande.get_type_demande_display }}</td>
+                        <td><pre>{{ demande.donnees|pprint }}</pre></td>
+                        <td><span class="status-badge status-en_attente">{{ demande.get_statut_display }}</span></td>
+                        <td>
+                            <form method="POST" action="{% url 'traiter_demande' demande.id %}" style="display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" name="action" value="VALIDEE" class="btn btn-success btn-sm">Approuver</button>
+                                <button type="submit" name="action" value="REFUSEE" class="btn btn-danger btn-sm">Refuser</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center">Aucune demande en attente.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chartData = {{ chart_data|safe|default:'null' }};
+    if (chartData) {
+        const ctx = document.getElementById('demandesChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: chartData.labels,
+                datasets: [{
+                    data: chartData.values,
+                    backgroundColor: ['#007bff', '#28a745', '#ffc107', '#dc3545', '#17a2b8'],
+                }]
+            },
+        });
+    }
+});
+</script>
+{% endblock %}

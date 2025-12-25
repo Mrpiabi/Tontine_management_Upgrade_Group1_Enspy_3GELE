@@ -17,7 +17,7 @@ from django.shortcuts import redirect,get_object_or_404
 from django.contrib.auth import authenticate, login as auth_login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.hashers import check_password
-from .models import membre,don,tontines,Notification,DemandeModification,TontinesMembres, pret, aide,cotisation,versementsol,versementcotis,epargne,remboursement,sanction
+from .models import membre,don,tontines,Demande,TontinesMembres, pret, aide,cotisation,versementsol,versementcotis,epargne,remboursement,sanction
 from .forms import MembreForm,LoginForm,TontinesForm,UserForm,PretForm,DonForm,AideForm,SanctionForm,RemboursementForm,VersementsolForm,VersementcotisForm,EpargneForm,CotisationForm
 from django.db import transaction
 from django.contrib.auth.decorators import login_required, user_passes_test
@@ -41,6 +41,11 @@ from .models import membre
 
 
 # Create your views here.
+
+# Helper function to check for superuser status
+def is_superuser(user):
+    return user.is_superuser
+
 
 def page_accueil(request):
     # Initialize form_data to handle GET requests
@@ -309,7 +314,7 @@ def notification_super_utilisateur(request, user_id):
     if request.method == 'POST':
         message = request.POST.get('message')
         # Enregistrer la notification
-        Notification.objects.create(super_utilisateur=super_utilisateur, message=message)
+        Demande.objects.create(super_utilisateur=super_utilisateur, message=message)
 
         messages.success(request, "Notification envoyée au super utilisateur.")
         return redirect('liste_super_utilisateurs')  # Rediriger vers la liste des super utilisateurs
@@ -317,17 +322,17 @@ def notification_super_utilisateur(request, user_id):
     return render(request, 'notification_super_utilisateur.html', {'super_utilisateur': super_utilisateur})
 
 
-def gerer_notifications(request):
+'''def gerer_notifications(request):
     if not request.user.is_superuser:
         return redirect('home')  # Redirigez les utilisateurs non autorisés
 
-    notifications = Notification.objects.filter(statut='en_attente')
+    notifications = Demande.objects.filter(statut='en_attente')
 
     if request.method == 'POST':
         id = request.POST.get('id')
         action = request.POST.get('action')
 
-        notification = Notification.objects.get(id=id)
+        notification = Demande.objects.get(id=id)
         if action == 'valider':
             notification.statut = 'valide'
             # Traitez la modification ici (mettez à jour les informations de l'utilisateur)
@@ -337,7 +342,7 @@ def gerer_notifications(request):
 
     return render(request, 'gerer_notifications.html', {'notifications': notifications})
 
-
+'''
 
 from django.core.mail import send_mail
 from django.conf import settings
@@ -401,7 +406,7 @@ def choix_tontine(request):
         if form.is_valid():
            # Crée une notification pour le super utilisateur
             #super_user = User.objects.get(is_superuser=True)  # Récupère le super utilisateur
-            notification = Notification()
+            notification = Demande()
             notification.utilisateur = request.user  # Associe la notification au super utilisateur
             notification.details =f"Choix de la tontine : {form.cleaned_data['tontine']}"  # Remplacez par le champ réel
             notification.statut = 'en_attente'
@@ -415,7 +420,7 @@ def choix_tontine(request):
 
 
 
-from .forms import NotificationForm
+'''from .forms import NotificationForm
 
 def soumettre_demande(request):
     if request.method == 'POST':
@@ -429,17 +434,17 @@ def soumettre_demande(request):
     else:
         form = NotificationForm()
     return render(request, 'soumettre_demande.html', {'form': form})
-
+'''
 def afficher_notifications(request):
     if not request.user.is_superuser:
         return redirect('home')
     #notifications = Notification.objects.filter(utilisateur=request.user)  # Récupère les notifications de l'utilisateur
-    notifications = Notification.objects.filter(statut='en_attente')
+    notifications = Demande.objects.filter(statut='en_attente')
     return render(request, 'voir_notifications.html', {'notifications': notifications})
 
 from django.shortcuts import get_object_or_404, redirect
 from django.contrib import messages
-from .models import Notification
+from .models import Demande
 
 
 import logging
@@ -502,9 +507,100 @@ def appliquer_modification(notification):
 
 import json
 
+
+# In views.py
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib.auth.decorators import login_required, user_passes_test
+from django.views.decorators.http import require_POST
+from django.contrib import messages
+from django.utils import timezone
+
+# Import all necessary models
+from .models import Demande, membre, tontines, TontinesMembres, pret
+
+# Make sure you have this helper function
+def is_superuser(user):
+    return user.is_superuser
+
+
+@require_POST # This  ensures this view can only be accessed via a POST request
+@login_required
+@user_passes_test(is_superuser)
+def traiter_demande(request, demande_id):
+    """
+    A single view to process an admin's decision (Approve/Deny) for a specific request.
+    This replaces both 'valider_demande' and 'refuser_demande'.
+    """
+    demande = get_object_or_404(Demande, id=demande_id, statut='EN_ATTENTE')
+    action = request.POST.get('action') # This will be 'VALIDEE' or 'REFUSEE' from the button
+
+    if action == 'VALIDEE':
+        success = False # Flag to track if the operation succeeded
+        
+        # We read the request data from the 'donnees' JSON field
+        data = demande.donnees
+        
+        try:
+            # Case 1: A member requests to join a tontine
+            if demande.type_demande == 'TONTINE':
+                membre_instance = get_object_or_404(membre, user=demande.utilisateur)
+                tontine_instance = get_object_or_404(tontines, idTontines=data['tontine_id'])
+                
+                # Check if the member is already in the tontine
+                if TontinesMembres.objects.filter(membres=membre_instance, tontines=tontine_instance).exists():
+                    messages.warning(request, f"Le membre {membre_instance.nom} est déjà dans la tontine {tontine_instance.nomTontines}.")
+                else:
+                    # Create the link between the member and the tontine
+                    TontinesMembres.objects.create(
+                        membres=membre_instance,
+                        tontines=tontine_instance,
+                        # You might need to generate a 'numero_adhesion' here if it's required
+                    )
+                    messages.success(request, f"Le membre {membre_instance.nom} a été ajouté à la tontine {tontine_instance.nomTontines}.")
+                    success = True
+
+            # Case 2: A member requests a loan (PRET)
+            elif demande.type_demande == 'PRET':
+                # This is an example. You need to adapt it based on the data
+                # you save in the 'donnees' field for a loan request.
+                pret.objects.create(
+                    utilisateur=demande.utilisateur,
+                    idMembre_preteur=get_object_or_404(membre, idMembre=data['idMembre_preteur']),
+                    idMembre_avaliste=get_object_or_404(membre, idMembre=data['idMembre_avaliste']),
+                    montant=data['montant'],
+                    pourcentage=data['pourcentage'],
+                    date_demande=data['date_demande'],
+                    statut='en_cours' # Set the initial status
+                )
+                messages.success(request, "La demande de prêt a été validée et le prêt a été créé.")
+                success = True
+            if success:
+                demande.statut = 'VALIDEE'
+
+        except Exception as e:
+            messages.error(request, f"Une erreur est survenue lors de l'application de la modification : {e}")
+            # The status will remain 'EN_ATTENTE' so the admin can try again
+
+    elif action == 'REFUSEE':
+        demande.statut = 'REFUSEE'
+        # You could add a form to the admin dashboard to get a reason for refusal
+        # demande.commentaire_admin = "Raison du refus..."
+        messages.warning(request, f"La demande de {demande.utilisateur.username} a été refusée.")
+
+    else:
+        messages.error(request, "Action non valide.")
+
+    demande.traitee_par = request.user
+    demande.date_traitement = timezone.now()
+    demande.save()
+
+    return redirect('gerer_demandes')
+
+'''
 def valider_demande(request, notification_id):
     # Récupérer la notification
-    notification = get_object_or_404(Notification, id=notification_id)
+    notification = get_object_or_404(Demande, id=notification_id)
 
     if request.method == 'POST':
         try:
@@ -681,7 +777,7 @@ def refuser_demande(request, notification_id):
         'demande': demande,
         'details': demande.details
     })
-
+'''
 
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
@@ -712,12 +808,59 @@ def supprimer_notification(request, notification_id):
 
 from django.utils.timezone import make_aware
 from datetime import datetime, time
+# In views.py
+from django.db.models import Count
 
-def voir_notifications(request):
-    notifications = Notification.objects.all().order_by('-date_envoi')
+@login_required
+@user_passes_test(is_superuser) 
+def gerer_demandes(request):
+    # A dashboard for admins to view and manage all user requests.
+    # Fetch all requests, ordered by newest first
+    toutes_les_demandes = Demande.objects.all()
+
+    # DATA ANALYSIS WITH PANDAS
+    demandes_en_attente = toutes_les_demandes.filter(statut='EN_ATTENTE')
+    demandes_traitees = toutes_les_demandes.exclude(statut='EN_ATTENTE')
+
+    # KPIs
+    kpi_data = {
+        'en_attente': demandes_en_attente.count(),
+        'validees_aujourdhui': demandes_traitees.filter(
+            statut='VALIDEE', 
+            date_traitement__date=timezone.now().date()
+        ).count(),
+        'refusees_aujourdhui': demandes_traitees.filter(
+            statut='REFUSEE',
+            date_traitement__date=timezone.now().date()
+        ).count(),
+    }
+
+    # Chart Data: Demandes par type
+    chart_data = None
+    if not toutes_les_demandes.exists():
+        pass # No data to plot
+    else:
+        df = pd.DataFrame(list(toutes_les_demandes.values('type_demande')))
+        demandes_par_type = df['type_demande'].value_counts()
+        chart_data = {
+            'labels': demandes_par_type.index.tolist(),
+            'values': demandes_par_type.values.tolist(),
+        }
+
+    context = {
+        'demandes_en_attente': demandes_en_attente,
+        'kpi': kpi_data,
+        'chart_data': chart_data
+    }
+    return render(request, 'demandes/gerer_demandes.html', context)
+
+
+
+'''def voir_notifications(request):
+    notifications = Demande.objects.all().order_by('-date_envoi')
 
     return render(request, 'voir_notifications.html', {'notifications': notifications})
-
+'''
 
 #def valider_demande(request, id):
 #    notification = get_object_or_404(Notification, id=id)
@@ -743,7 +886,7 @@ def voir_notifications(request):
 
 #@staff_member_required
 def traiter_notification(request, notification_id):
-    notification = get_object_or_404(Notification, id=notification_id, statut='en_attente')
+    notification = get_object_or_404(Demande, id=notification_id, statut='en_attente')
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -818,9 +961,6 @@ from django.http import HttpResponseForbidden
 
 from django.db.models import Sum
 
-# Helper function to check for superuser status
-def is_superuser(user):
-    return user.is_superuser
 
 @login_required
 @user_passes_test(is_superuser) # Make sure only superusers can see this
@@ -1672,44 +1812,103 @@ def modifier_informations(request):
         }
         return render(request, 'modifier_informations.html', {'forms': forms})
 
+
+# In Association_tontine/views.py
+
+from django.shortcuts import render, redirect
+from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+import json
+from .forms import DemandeAdhesionTontineForm
+from .models import Demande, membre
+
+
+@login_required 
+def demander_adhesion_tontine(request):
+    """
+    A view for a user to submit a request to join a tontine.
+    This replaces the need for the complex 'modifier_informations' logic for this action.
+    """
+    # First, we try to get the 'membre' profile linked to the logged-in user.
+    try:
+        # Based on your 'membre' model, the related_name is 'membre'.
+        # Since it's a ForeignKey, it could potentially have multiple profiles (though it shouldn't).
+        # Using .first() is a safe way to get the profile.
+        membre_instance = request.user.membre.first()
+        if not membre_instance:
+            raise membre.DoesNotExist
+            
+    except membre.DoesNotExist:
+        messages.error(request, "Erreur : Votre compte utilisateur n'est pas associé à un profil de membre. Veuillez contacter un administrateur.")
+        return redirect('tableau_de_bord') # Redirect them back to their dashboard
+
+    # This block handles the form submission when the user clicks "Envoyer"
+    if request.method == 'POST':
+        form = DemandeAdhesionTontineForm(request.POST)
+        if form.is_valid():
+            tontine_choisie = form.cleaned_data['tontine']
+            commentaire = form.cleaned_data['commentaire']
+
+            # Prepare the structured data to be saved in the 'donnees' JSONField.
+            # This is much cleaner than saving a string.
+            request_data = {
+                'tontine_id': tontine_choisie.idTontines,
+                'tontine_nom': tontine_choisie.nomTontines,
+                'commentaire_utilisateur': commentaire
+            }
+
+            # Create a single, clean 'Demande' object in the database.
+            Demande.objects.create(
+                utilisateur=request.user,
+                type_demande='TONTINE', # This must match one of the choices in the Demande model
+                donnees=request_data
+                # The status defaults to 'EN_ATTENTE' automatically
+            )
+
+            messages.success(request, f"Votre demande d'adhésion à la tontine '{tontine_choisie.nomTontines}' a été envoyée avec succès pour validation.")
+            return redirect('tableau_de_bord') # Redirect the user to their personal dashboard
+    
+    else: # If it's a GET request, just show a blank form
+        form = DemandeAdhesionTontineForm()
+
+    context = {
+        'form': form,
+    }
+    return render(request, 'demandes/demander_adhesion_tontine.html', context)
+
 from django.utils import timezone
 import json
 
+@login_required
 def confirmation_demande(request):
+    demande_type = request.session.get('demande_type')
+    demande_data = request.session.get('demande_data')
+
+    if not demande_type or not demande_data:
+        messages.warning(request, "Aucune demande à confirmer.")
+        return redirect('modifier_informations')
+
     if request.method == 'POST':
         if 'confirmer' in request.POST:
-            demande_type = request.session.get('demande_type')
-            demande_data = request.session.get('demande_data')
-
-            if demande_type and demande_data:
-                details_str = json.dumps(demande_data, indent=2, default=str)
-
-                Notification.objects.create(
-                    utilisateur=request.user,
-                    type_modification=demande_type,
-                    details=details_str,
-                    statut='en_attente',
-                    date_envoi=timezone.now(),
-                )
-
-                request.session.pop('demande_type', None)
-                request.session.pop('demande_data', None)
-
-                return redirect('notification_succes')
-
+            # Create the new 'Demande' 
+            Demande.objects.create(
+                utilisateur=request.user,
+                type_demande=demande_type.upper(),
+                donnees=demande_data # Save the dictionary directly to the JSONField
+            )
+            
+            request.session.pop('demande_type', None)
+            request.session.pop('demande_data', None)
+            messages.success(request, f"Votre demande de type '{demande_type}' a été envoyée pour validation.")
+            return redirect('tableau_de_bord')
+        
         elif 'annuler' in request.POST:
+            request.session.pop('demande_type', None)
+            request.session.pop('demande_data', None)
             return redirect('modifier_informations')
 
-        # ✅ Ajouter une redirection ou une réponse par défaut ici :
-        return redirect('modifier_informations')  # ou autre vue par défaut
-
-    else:
-        demande_type = request.session.get('demande_type')
-        demande_data = request.session.get('demande_data')
-        return render(request, 'confirmation_demande.html', {
-            'demande_type': demande_type,
-            'demande_data': demande_data,
-        })
+    context = {'demande_type': demande_type, 'demande_data': demande_data}
+    return render(request, 'confirmation_demande.html', context)
 
 
 
@@ -1780,7 +1979,7 @@ def modifier_personnelles(request):
         # Traiter la demande de modification des informations personnelles
         nouveau_message = request.POST.get('message')
         # Créer une notification pour le superutilisateur
-        Notification.objects.create(
+        Demande.objects.create(
             membre=request.user,
             super_utilisateur=...,  # Identifiez le superutilisateur
             message=nouveau_message

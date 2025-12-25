@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import AuthenticationForm
-from .models import membre,tontines, pret,don,remboursement,Notification,versementsol,versementcotis,aide,sanction,epargne,cotisation
+from .models import membre,tontines, pret,don,remboursement,Demande,versementsol,versementcotis,aide,sanction,epargne,cotisation
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import check_password
@@ -39,6 +39,8 @@ class CustomAuthenticationForm(forms.Form):
         return self.cleaned_data
 
 
+
+
 class PasswordRegistrationForm(forms.Form):
     password = forms.CharField(
         widget=forms.PasswordInput(attrs={'placeholder': 'Mot de passe'}),
@@ -71,12 +73,12 @@ class UserForm(forms.ModelForm):
         model = User
         fields = ['username','email','password']
 
-class NotificationForm(forms.ModelForm):
+'''class NotificationForm(forms.ModelForm):
 
     
     class Meta:
-        model = Notification
-        fields = ['details','statut']        
+        model = Demande
+        fields = ['details','statut']  '''      
 
 class TontineChoiceForm(forms.Form):
     tontine = forms.ModelChoiceField(
@@ -394,3 +396,26 @@ class SuperuserCreateMembreForm(forms.Form):
             raise forms.ValidationError("L'année d'entrée ne peut pas être antérieure à l'année de naissance.")
             
         return cleaned_data
+
+from .models import tontines 
+
+class DemandeAdhesionTontineForm(forms.Form):
+    """
+    A simple, focused form for a member to request to join a tontine.
+    """
+    tontine = forms.ModelChoiceField(
+        queryset=tontines.objects.all(),
+        label="Choisissez la tontine que vous souhaitez rejoindre",
+        empty_label="--- Sélectionnez une tontine ---",
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    
+    commentaire = forms.CharField(
+        widget=forms.Textarea(attrs={
+            'placeholder': 'Optionnel : ajoutez un bref commentaire pour l\'administrateur.',
+            'rows': 3,
+            'class': 'form-control'
+        }),
+        label="Commentaire (Optionnel)",
+        required=False
+    )
