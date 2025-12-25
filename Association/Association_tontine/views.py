@@ -34,6 +34,12 @@ from datetime import datetime
 import json
 # Import our NEW form
 from .forms import SuperuserCreateMembreForm 
+
+import numpy as np
+
+from .models import membre 
+
+
 # Create your views here.
 
 def page_accueil(request):
@@ -883,7 +889,7 @@ def tableau_de_bord_global(request):
         plt.close()
         popularity_chart_path_url = 'images/dashboard/popularity_chart.png'
 
-    # --- Plot 2: Member Growth ---
+    # Plot 2: Member Growth
     growth_chart_path_url = None
     if not df_membres.empty and 'anneeEntree' in df_membres.columns:
         df_membres_clean = df_membres.dropna(subset=['anneeEntree'])
@@ -904,7 +910,7 @@ def tableau_de_bord_global(request):
             plt.close()
             growth_chart_path_url = 'images/dashboard/growth_chart.png'
 
-    # --- Prepare context for the template ---
+    # Prepare context for the template
     membres_list = membre.objects.prefetch_related('tontines').filter(actif=1)
 
     context = {
@@ -1124,72 +1130,90 @@ def tableau_de_bord(request):
     #}
     #return render(request, 'tableau_de_bord.html', context)
 
+
+
 @login_required
-def membres (request):
-    if request.user.is_authenticated:
-        # Vérifiez si l'utilisateur est un super utilisateur
-        if request.user.is_superuser:
-            # Récupérer tous les membres et leurs tontines
-            membres = membre.objects.all().prefetch_related('tontines')
-        else:
-            # Récupérer le membre associé à l'utilisateur connecté
-            membre_utilisateur = membre.objects.filter(user=request.user).first()
-            if membre_utilisateur:
-                # Récupérer toutes les tontines associées à ce membre
-                tontines_utilisateur = membre_utilisateur.tontines.all()
-                # Récupérer tous les membres associés aux tontines de l'utilisateur
-                membres = membre.objects.filter(tontines__in=tontines_utilisateur).distinct()
-            else:
-                membres = []  # Aucun membre trouvé
+def membres(request):
+    # This page is primarily for the admin, so we focus on that case.
+    if not request.user.is_superuser:
+        # For a normal user, we can redirect them to their own dashboard.
+        return redirect('tableau_de_bord')
 
-        return render(request, 'membre.html', {'membres': membres})
-    else:
-        return redirect('login')
-    #membres = membre.objects.all()  # Récupérer tous les membres
-    #return render(request, 'membre.html', {'membres': membres})
-    #user = request.user
-    #if user.is_superuser:
-        # Récupérer les tontines de l'utilisateur
-     #   membres=membre.objects.prefetch_related('tontines').all()
-      #  tontines = membres.tontines.all()
+    #  Fetch all raw data into a Pandas DataFrame 
+    all_membres_qs = membre.objects.filter(actif=1).values('anneeNais', 'anneeEntree', 'sexe', 'engagement')
+    df_membres = pd.DataFrame(list(all_membres_qs))
+
+    # Initialize context dictionaries
+    kpi_data = {}
+    chart_paths = {}
+    
+    # We only run the analysis if there are members
+    if not df_membres.empty:
+
+        #  Calculate KPIs 
+        current_year = timezone.now().year
         
+        # KPI 1: Total number of members
+        kpi_data['total_membres'] = len(df_membres)
+        
+        # KPI 2: Average member age 
+        # We drop invalid birth years before calculating
+        df_membres_with_age = df_membres.dropna(subset=['anneeNais'])
+        if not df_membres_with_age.empty:
+            ages = current_year - df_membres_with_age['anneeNais']
+            kpi_data['age_moyen'] = int(np.mean(ages))
+        else:
+            kpi_data['age_moyen'] = 0
 
+        # KPI 3: Average seniority
+        df_membres_with_entree = df_membres.dropna(subset=['anneeEntree'])
+        if not df_membres_with_entree.empty:
+            anciennete = current_year - df_membres_with_entree['anneeEntree']
+            kpi_data['anciennete_moyenne'] = round(np.mean(anciennete), 1)
+        else:
+            kpi_data['anciennete_moyenne'] = 0
+      
+        #  Generate plots with Matplotlib/Seaborn   
+        save_path = os.path.join(settings.BASE_DIR, 'static', 'images', 'dashboard_membres')
+        os.makedirs(save_path, exist_ok=True)
+        sns.set_theme(style="whitegrid", font_scale=1.1)
 
-        # Récupérer les membres associés aux tontines de l'utilisateur
-       # Membres = membre.objects.filter(tontines__in=tontines).distinct()
-        #context = {
-         #   'tontines':tontines
-            
-        #}
-        #return render(request, 'membre.html', context)
-    #else:
-     #   Membres = membre.objects.none()  # Aucun membre si non authentifié
-   # context = {
-    #  'Membres':Membres
-            
-    #}
-    #return render(request, 'membre.html', context)
-        #try:
-         #   membre_inst = user.membre
-          #  tontines=membre_inst.tontines.all()
-        #    membres = membre.objects.filter(tontines__in=tontines).distinct()
-        #except membre.DoesNotExist:
-         #   membres = membre.objects.none()
-    #context = {
-     #   'membres':membres
-            
-    #}
-    #return render(request, 'membre.html', context)
+        # Plot 1: Distribution by Gender (Pie Chart)
+        sexe_counts = df_membres['sexe'].value_counts()
+        if not sexe_counts.empty:
+            plt.figure(figsize=(6, 6))
+            plt.pie(sexe_counts, labels=sexe_counts.index, autopct='%1.1f%%', 
+                    colors=sns.color_palette('pastel'), wedgeprops={'edgecolor': 'white'})
+            plt.title('Distribution by Gender', weight='bold')
+            sexe_chart_path = os.path.join(save_path, 'sexe_pie_chart.png')
+            plt.savefig(sexe_chart_path)
+            plt.close() # Close the figure to free up memory
+            chart_paths['sexe_chart'] = 'images/dashboard_membres/sexe_pie_chart.png'
 
+        # Plot 2: Distribution by Marital Status (Bar Chart) 
+        engagement_counts = df_membres['engagement'].value_counts()
+        if not engagement_counts.empty:
+            plt.figure(figsize=(8, 5))
+            ax = sns.barplot(x=engagement_counts.index, y=engagement_counts.values, palette='viridis')
+            ax.set_title('Distribution by Marital Status', weight='bold')
+            ax.set_ylabel('Number of Members')
+            plt.tight_layout()
+            engagement_chart_path = os.path.join(save_path, 'engagement_bar_chart.png')
+            plt.savefig(engagement_chart_path)
+            plt.close()
+            chart_paths['engagement_chart'] = 'images/dashboard_membres/engagement_bar_chart.png'
 
-        #return render(request, 'membre.html', {'tontine':None})
-#from .models import TypeTontine
+    #  Step 4: Prepare the final context 
+    # Fetch the full member list for the table
+    membres_list = membre.objects.filter(actif=1).prefetch_related('tontines')
 
-#from .models import TypeTontine
-
-#def liste_types_tontines(request):
- #   types = TypeTontine.objects.all()
- #   return render(request, 'liste_types_tontines.html', {'types': types})
+    context = {
+        'membres': membres_list,
+        'kpi': kpi_data,
+        'chart_paths': chart_paths,
+    }
+    
+    return render(request, 'membre.html', context)
 
 
 

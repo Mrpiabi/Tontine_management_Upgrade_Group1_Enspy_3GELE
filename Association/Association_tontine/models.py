@@ -6,22 +6,6 @@ from django.conf import settings
 
     
 
-
-
-
-
-
-# Modèle pour Tontines
-#class TypeTontine(models.Model):
- #   type_id=models.BigAutoField(db_column='type_id', primary_key=True)
- #   nom = models.CharField(max_length=100)
-#    montant_type = models.DecimalField(max_digits=10, decimal_places=2)
-#    obligatoire = models.BooleanField(default=False)
-
-#    def _str_(self):
- #       return f"{self.nom} ({self.montant} FCFA)"  
-
-
 class membre(models.Model):
     idMembre = models.BigAutoField(db_column='idMembre', primary_key=True)
     nom = models.CharField(db_column='nom', max_length=50, blank=True, null=True)
@@ -79,23 +63,7 @@ class tontines(models.Model):
     class Meta:
         db_table = 'tontines'    
 
-
-#class Notification(models.Model):
-#    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
- #   details = models.TextField()
-#    date_creation = models.DateTimeField(auto_now_add=True)
-  #  lu = models.BooleanField(default=False)
-
- #   def _str_(self):
-#        return f"Notification pour {self.utilisateur.username} - {'Lue' if self.lu else 'Non lue'}"
-
-
-    
-
-
-
-
-class Notification(models.Model):
+'''class Notification(models.Model):
     utilisateur = models.ForeignKey(User, on_delete=models.CASCADE)
     type_modification = models.CharField(max_length=100)  # ex: 'tontine', 'pret'
     details = models.TextField()  # JSONField si Django 3.1+ (préfèrable)
@@ -109,30 +77,54 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.utilisateur.username} - {self.type_modification} - {self.statut} - {self.details} "
-    
-    #utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications_utilisateur')
-    #super_utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True, related_name='notifications_super_utilisateur')
-    #message = models.TextField()
-    #date_envoi = models.DateTimeField()
-    #validated = models.BooleanField(default=False)
+'''
 
-    #class Meta:
-     #   ordering = ['-date_envoi']
-
-class DemandeModification(models.Model):
+class Demande(models.Model):
+    """
+    A single, unified model to handle all change requests from users.
+    Renamed from DemandeModification for clarity.
+    """
+    # CHOICES for the type of request
     TYPE_CHOIX = [
-        ('Tontine', 'Tontine'),
-        ('Pret', 'Prêt'),
-        ('Remboursement', 'Remboursement'),
-        ('Epargne', 'Épargne'),
-        ('Don', 'Don'),
+        ('TONTINE', 'Adhésion Tontine'),
+        ('PRET', 'Demande de Prêt'),
+        ('REMBOURSEMENT', 'Déclaration de Remboursement'),
     ]
     
-    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE)
+    # CHOICES for the status of the request
+    STATUT_CHOIX = [
+        ('EN_ATTENTE', 'En Attente'),
+        ('VALIDEE', 'Validée'),
+        ('REFUSEE', 'Refusée'),
+    ]
+
+    # The user who made the request.
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE, related_name="demandes")
+    
+    # The type of request, using the choices defined above.
     type_demande = models.CharField(max_length=20, choices=TYPE_CHOIX)
+    
+    # The data associated with the request, stored in a structured JSON format.
     donnees = models.JSONField()
-    statut = models.CharField(max_length=20, choices=[('En attente', 'En attente'), ('Validée', 'Validée'), ('Refusée', 'Refusée')], default='En attente')
-    date_creation = models.DateTimeField(auto_now_add=True)     
+    
+    # The current status of the request.
+    statut = models.CharField(max_length=20, choices=STATUT_CHOIX, default='EN_ATTENTE')
+    
+    # Timestamps for tracking
+    date_creation = models.DateTimeField(auto_now_add=True)
+    date_traitement = models.DateTimeField(null=True, blank=True) # Will be set when an admin acts on it
+    
+    # Optional field for the admin to leave a comment (e.g., reason for refusal)
+    commentaire_admin = models.TextField(blank=True, null=True)
+    
+    # The admin who processed the request
+    traitee_par = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="demandes_traitees")
+
+    def __str__(self):
+        return f"Demande de {self.get_type_demande_display()} par {self.utilisateur.username} - Statut: {self.get_statut_display()}"
+
+    class Meta:
+        ordering = ['-date_creation'] # Show the newest requests first   
        
 
     
@@ -145,18 +137,6 @@ class TontinesMembres(models.Model):
     class Meta:
         db_table = 'tontines_membres'
         constraints = []
-
-#class DemandeParticipation(models.Model):
- #   demande_id=models.BigAutoField(db_column='demande_id', primary_key=True)
- #   membre_concerne = models.ForeignKey(membre, on_delete=models.CASCADE)
- #   tontine_concernee = models.ForeignKey(tontines, on_delete=models.CASCADE)
- #   date_demande = models.DateTimeField(auto_now_add=True)
- #   approuvee = models.BooleanField(default=False)
- #   refusee = models.BooleanField(default=False)
-
- #   def _str_(self):
- #       return f"Demande de {self.membre_concerne} pour {self.tontine_concernee}"
-
 
 
 # Modèle pour Aide
@@ -232,14 +212,6 @@ class pret(models.Model):
     idSeance = models.BigIntegerField(db_column='idSeance', null=True, blank=True)
     idMembre_preteur = models.ForeignKey(membre, related_name='prets_preteur', on_delete=models.CASCADE)
     idSeance_1 = models.BigIntegerField(db_column='idSeance_1', null=True, blank=True)
-    #def statut_remboursement(self):
-     #   total_remboursements = sum(remboursement.montant for remboursement in self.remboursements.all())
-      #  if total_remboursements >= self.montant:
- #           return "Totalement remboursé"
-  #      elif total_remboursements > 0:
-   #         return "En cours de remboursement"
-  #      else:
-   #         return "Pas remboursé"
     est_rembourse = models.BooleanField(default=False)
     def montant_restant(self):
         total_rembourse = sum(remboursement.montant_rembourse for remboursement in self.remboursements.all())
