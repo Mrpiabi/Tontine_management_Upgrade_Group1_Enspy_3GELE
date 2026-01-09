@@ -1294,12 +1294,25 @@ def creer_pret(request):
    
     
 def prets(request):
-    #prets = get_object_or_404(pret, idpret=idpret)
-    prets = pret.objects.all()
+    prets_list = pret.objects.all()
+    
+    # Calcul des statistiques
+    prets_total = sum(p.montant for p in prets_list if p.montant)
+    prets_en_cours = sum(1 for p in prets_list if getattr(p, 'est_en_cours_remboursement', False))
+    prets_termines = sum(1 for p in prets_list if not getattr(p, 'est_en_cours_remboursement', False))
+    
+    # Calcul du taux moyen (éviter la division par zéro)
+    taux_moyen = 0
+    if prets_list:
+        taux_total = sum(p.pourcentage for p in prets_list if p.pourcentage)
+        taux_moyen = taux_total / len(prets_list)
     
     context = {
-        'prets': prets,
-        #'remboursements': remboursements,
+        'prets': prets_list,
+        'prets_total': prets_total,
+        'prets_en_cours': prets_en_cours,
+        'prets_termines': prets_termines,
+        'taux_moyen': taux_moyen,
     }
     return render(request, 'pret.html', context)
    
