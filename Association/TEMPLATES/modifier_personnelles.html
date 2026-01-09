@@ -1,20 +1,120 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Modifier Informations Personnelles</title>
-    <link rel="stylesheet" href="{% static 'css/style.css' %}">
-</head>
-<body>
-    <h1>Modifier Vos Informations Personnelles</h1>
-    <form method="POST">
-        {% csrf_token %}
-        <label for="message">Détails de la demande :</label>
-        <textarea name="message" id="message" required></textarea>
-        <button type="submit">Envoyer la demande</button>
-    </form>
-    <a href="{% url 'tableau_de_bord' %}">Retour au tableau de bord</a>
-</body>
-</html>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4 mb-5">
+    <div class="row">
+        
+        <div class="col-md-3 mb-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white text-center">
+                    <h5 class="mb-0">⚙️ Mes Modifications</h5>
+                </div>
+                <div class="list-group list-group-flush" id="list-tab" role="tablist">
+                    <a class="list-group-item list-group-item-action active" id="list-infos-list" data-toggle="list" href="#list-infos" role="tab">
+                        👤 Infos Personnelles
+                    </a>
+                    <a class="list-group-item list-group-item-action" id="list-tontine-list" data-toggle="list" href="#list-tontine" role="tab">
+                        🏦 Ma Tontine
+                    </a>
+                    <a class="list-group-item list-group-item-action" id="list-epargne-list" data-toggle="list" href="#list-epargne" role="tab">
+                        💰 Mon Épargne
+                    </a>
+                    <a class="list-group-item list-group-item-action" id="list-message-list" data-toggle="list" href="#list-message" role="tab">
+                        📩 Autre Demande
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-9">
+            <div class="card shadow border-0">
+                <div class="card-body p-4">
+                    
+                    <h3 class="text-secondary mb-4 border-bottom pb-2">Espace Personnel</h3>
+
+                    {% if messages %}
+                        {% for message in messages %}
+                            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                                {{ message }}
+                                <button type="button" class="close" data-dismiss="alert">&times;</button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+
+                    <div class="tab-content" id="nav-tabContent">
+                        
+                        <div class="tab-pane fade show active" id="list-infos" role="tabpanel">
+                            <h4 class="text-primary mb-3">Modifier mes coordonnées</h4>
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="bg-light p-3 rounded mb-3">
+                                    {{ user_form.as_p }}
+                                </div>
+                                <button type="submit" name="update_infos" class="btn btn-primary">Enregistrer mes infos</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="list-tontine" role="tabpanel">
+                            <h4 class="text-primary mb-3">Changer de Tontine</h4>
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="bg-light p-3 rounded mb-3">
+                                    <label>Sélectionner la nouvelle tontine :</label>
+                                    <select name="tontine_id" class="form-control">
+                                        <option value="">-- Choisir --</option>
+                                        <option value="1">Tontine A</option>
+                                        <option value="2">Tontine B</option>
+                                    </select>
+                                    <label class="mt-2">Raison du changement :</label>
+                                    <textarea name="raison" class="form-control" rows="2"></textarea>
+                                </div>
+                                <button type="submit" name="update_tontine" class="btn btn-warning">Demander le changement</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="list-epargne" role="tabpanel">
+                            <h4 class="text-primary mb-3">Ajuster mon Épargne</h4>
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="bg-light p-3 rounded mb-3">
+                                    <label>Nouveau montant souhaité :</label>
+                                    <input type="number" name="montant" class="form-control" placeholder="Ex: 10000">
+                                </div>
+                                <button type="submit" name="update_epargne" class="btn btn-success">Valider</button>
+                            </form>
+                        </div>
+
+                        <div class="tab-pane fade" id="list-message" role="tabpanel">
+                            <h4 class="text-primary mb-3">Envoyer une requête spéciale</h4>
+                            <form method="post">
+                                {% csrf_token %}
+                                <div class="bg-light p-3 rounded mb-3">
+                                    <label for="message">Détails de la demande :</label>
+                                    <textarea name="message" id="message" class="form-control" rows="4" required></textarea>
+                                </div>
+                                <button type="submit" name="send_message" class="btn btn-info text-white">Envoyer la demande</button>
+                            </form>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Style pour rendre les champs plus jolis */
+    .bg-light input, .bg-light select, .bg-light textarea {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        margin-top: 5px;
+    }
+    .list-group-item.active {
+        background-color: #343a40;
+        border-color: #343a40;
+    }
+</style>
+{% endblock %}

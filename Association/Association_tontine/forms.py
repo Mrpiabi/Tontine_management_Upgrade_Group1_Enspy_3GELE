@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.forms import AuthenticationForm
-from .models import membre,tontines, pret,don,remboursement,Demande,versementsol,versementcotis,aide,sanction,epargne,cotisation
+from .models import membre,tontines,Notification, pret,don,remboursement,versementsol,versementcotis,aide,sanction,epargne,cotisation
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.contrib.auth.hashers import check_password
@@ -397,25 +397,8 @@ class SuperuserCreateMembreForm(forms.Form):
             
         return cleaned_data
 
-from .models import tontines 
-
-class DemandeAdhesionTontineForm(forms.Form):
-    """
-    A simple, focused form for a member to request to join a tontine.
-    """
-    tontine = forms.ModelChoiceField(
-        queryset=tontines.objects.all(),
-        label="Choisissez la tontine que vous souhaitez rejoindre",
-        empty_label="--- Sélectionnez une tontine ---",
-        widget=forms.Select(attrs={'class': 'form-select'})
-    )
+class NotificationForm(forms.ModelForm):
     
-    commentaire = forms.CharField(
-        widget=forms.Textarea(attrs={
-            'placeholder': 'Optionnel : ajoutez un bref commentaire pour l\'administrateur.',
-            'rows': 3,
-            'class': 'form-control'
-        }),
-        label="Commentaire (Optionnel)",
-        required=False
-    )
+    class Meta:
+        model = Notification
+        fields = ['details','statut']

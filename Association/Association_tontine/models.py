@@ -63,7 +63,7 @@ class tontines(models.Model):
     class Meta:
         db_table = 'tontines'    
 
-'''class Notification(models.Model):
+class Notification(models.Model):
     utilisateur = models.ForeignKey(User, on_delete=models.CASCADE)
     type_modification = models.CharField(max_length=100)  # ex: 'tontine', 'pret'
     details = models.TextField()  # JSONField si Django 3.1+ (préfèrable)
@@ -77,9 +77,23 @@ class tontines(models.Model):
 
     def __str__(self):
         return f"{self.utilisateur.username} - {self.type_modification} - {self.statut} - {self.details} "
-'''
 
-class Demande(models.Model):
+class DemandeModification(models.Model):
+    TYPE_CHOIX = [
+        ('Tontine', 'Tontine'),
+        ('Pret', 'Prêt'),
+        ('Remboursement', 'Remboursement'),
+        ('Epargne', 'Épargne'),
+        ('Don', 'Don'),
+    ]
+    
+    utilisateur = models.ForeignKey(User, on_delete=models.CASCADE)
+    type_demande = models.CharField(max_length=20, choices=TYPE_CHOIX)
+    donnees = models.JSONField()
+    statut = models.CharField(max_length=20, choices=[('En attente', 'En attente'), ('Validée', 'Validée'), ('Refusée', 'Refusée')], default='En attente')
+    date_creation = models.DateTimeField(auto_now_add=True)  
+
+'''class Demande(models.Model):
     """
     A single, unified model to handle all change requests from users.
     Renamed from DemandeModification for clarity.
@@ -125,7 +139,7 @@ class Demande(models.Model):
 
     class Meta:
         ordering = ['-date_creation'] # Show the newest requests first   
-       
+'''     
 
     
     
